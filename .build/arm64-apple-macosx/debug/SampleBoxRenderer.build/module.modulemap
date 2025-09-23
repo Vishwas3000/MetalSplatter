@@ -1,0 +1,4 @@
+module SampleBoxRenderer {
+    header "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SampleBoxRenderer.build/SampleBoxRenderer-Swift.h"
+    requires objc
+}

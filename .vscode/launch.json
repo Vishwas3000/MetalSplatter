@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MetalSplatter}",
+            "name": "Debug SplatConverter",
+            "program": "${workspaceFolder:MetalSplatter}/.build/debug/SplatConverter",
+            "preLaunchTask": "swift: Build Debug SplatConverter"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MetalSplatter}",
+            "name": "Release SplatConverter",
+            "program": "${workspaceFolder:MetalSplatter}/.build/release/SplatConverter",
+            "preLaunchTask": "swift: Build Release SplatConverter"
+        }
+    ]
+}

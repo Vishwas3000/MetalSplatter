@@ -1,0 +1,4 @@
+module SplatIO {
+    header "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatIO-Swift.h"
+    requires objc
+}

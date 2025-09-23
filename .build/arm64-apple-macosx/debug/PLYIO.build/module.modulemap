@@ -1,0 +1,4 @@
+module PLYIO {
+    header "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/PLYIO.build/PLYIO-Swift.h"
+    requires objc
+}

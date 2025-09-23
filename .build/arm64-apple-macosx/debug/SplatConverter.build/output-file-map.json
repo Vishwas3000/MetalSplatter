@@ -1,0 +1,11 @@
+{
+  "": {
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatConverter.build/master.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatConverter/Sources/SplatConverter.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatConverter.build/SplatConverter.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatConverter.build/SplatConverter.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatConverter.build/SplatConverter~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatConverter.build/SplatConverter.swiftdeps"
+  }
+}

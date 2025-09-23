@@ -1,0 +1,89 @@
+{
+  "": {
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/master.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/AutodetectSceneReader.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/AutodetectSceneReader.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/AutodetectSceneReader.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/AutodetectSceneReader~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/AutodetectSceneReader.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/Comparable+clamped.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/Comparable+clamped.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/Comparable+clamped.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/Comparable+clamped~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/Comparable+clamped.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/DotSplatEncodedPoint.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatEncodedPoint.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatEncodedPoint.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatEncodedPoint~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatEncodedPoint.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/DotSplatSceneReader.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatSceneReader.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatSceneReader.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatSceneReader~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatSceneReader.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/DotSplatSceneWriter.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatSceneWriter.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatSceneWriter.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatSceneWriter~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/DotSplatSceneWriter.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/SplatFileFormat.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatFileFormat.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatFileFormat.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatFileFormat~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatFileFormat.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/SplatMemoryBuffer.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatMemoryBuffer.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatMemoryBuffer.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatMemoryBuffer~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatMemoryBuffer.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/SplatPLYConstants.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYConstants.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYConstants.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYConstants~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYConstants.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/SplatPLYSceneReader.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYSceneReader.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYSceneReader.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYSceneReader~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYSceneReader.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/SplatPLYSceneWriter.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYSceneWriter.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYSceneWriter.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYSceneWriter~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatPLYSceneWriter.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/SplatScenePoint+CustomStringConvertible.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatScenePoint+CustomStringConvertible.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatScenePoint+CustomStringConvertible.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatScenePoint+CustomStringConvertible~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatScenePoint+CustomStringConvertible.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/SplatScenePoint.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatScenePoint.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatScenePoint.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatScenePoint~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatScenePoint.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/SplatSceneReader.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatSceneReader.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatSceneReader.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatSceneReader~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatSceneReader.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/SplatIO/Sources/SplatSceneWriter.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatSceneWriter.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatSceneWriter.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatSceneWriter~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/SplatIO.build/SplatSceneWriter.swiftdeps"
+  }
+}
