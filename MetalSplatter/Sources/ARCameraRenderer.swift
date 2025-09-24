@@ -25,12 +25,13 @@ public class ARCameraRenderer {
         let texCoord: SIMD2<Float>
     }
     
-    // Portrait orientation: rotate 90° clockwise for correct camera orientation
+    // Standard texture coordinates with Y-flip to correct ARKit camera orientation
+    // ARKit camera textures are typically flipped vertically from what we expect
     private let quadVertices: [Vertex] = [
-        Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(0, 0)),  // Bottom-left
-        Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(1, 0)),  // Bottom-right
-        Vertex(position: SIMD2(-1,  1), texCoord: SIMD2(0, 1)),  // Top-left
-        Vertex(position: SIMD2( 1,  1), texCoord: SIMD2(1, 1))   // Top-right
+        Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(1, 1)),  // Bottom-left → Top-left of texture (Y-flipped)
+        Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(1, 0)),  // Bottom-right → Top-right of texture (Y-flipped)
+        Vertex(position: SIMD2(-1,  1), texCoord: SIMD2(0, 1)),  // Top-left → Bottom-left of texture (Y-flipped)
+        Vertex(position: SIMD2( 1,  1), texCoord: SIMD2(0, 0))   // Top-right → Bottom-right of texture (Y-flipped)
     ]
     
     public init?(device: MTLDevice) {
@@ -150,7 +151,13 @@ public class ARCameraRenderer {
             print("🎯 AR camera depth stencil state set")
         }
         
+        // Log camera texture dimensions for debugging aspect ratio issues
         let capturedImage = frame.capturedImage
+        let cameraWidth = CVPixelBufferGetWidth(capturedImage)
+        let cameraHeight = CVPixelBufferGetHeight(capturedImage)
+        print("📷 Camera texture dimensions: \(cameraWidth) x \(cameraHeight)")
+        print("📷 Camera aspect ratio: \(Float(cameraWidth) / Float(cameraHeight))")
+        
         let pixelFormat = CVPixelBufferGetPixelFormatType(capturedImage)
         Self.log.info("Captured image pixel format: \(pixelFormat)")
         
