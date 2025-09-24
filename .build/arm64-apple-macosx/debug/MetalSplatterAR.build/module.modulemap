@@ -1,0 +1,4 @@
+module MetalSplatterAR {
+    header "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatterAR.build/MetalSplatterAR-Swift.h"
+    requires objc
+}

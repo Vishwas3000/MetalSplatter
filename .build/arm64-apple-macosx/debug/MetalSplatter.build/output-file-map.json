@@ -2,6 +2,24 @@
   "": {
     "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/master.swiftdeps"
   },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/MetalSplatter/Sources/ARCameraRenderer.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARCameraRenderer.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARCameraRenderer.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARCameraRenderer~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARCameraRenderer.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/MetalSplatter/Sources/ARSceneView.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARSceneView.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARSceneView.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARSceneView~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARSceneView.swiftdeps"
+  },
+  "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/MetalSplatter/Sources/ARSplatRenderer.swift": {
+    "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARSplatRenderer.d",
+    "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARSplatRenderer.swift.o",
+    "swiftmodule": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARSplatRenderer~partial.swiftmodule",
+    "swift-dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/ARSplatRenderer.swiftdeps"
+  },
   "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/MetalSplatter/Sources/MetalBuffer.swift": {
     "dependencies": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/MetalBuffer.d",
     "object": "/Users/sudeepsharma/Documents/GitHub/MetalSplatter/.build/arm64-apple-macosx/debug/MetalSplatter.build/MetalBuffer.swift.o",

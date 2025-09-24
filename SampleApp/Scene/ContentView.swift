@@ -1,9 +1,11 @@
 import SwiftUI
 import RealityKit
 import UniformTypeIdentifiers
+import MetalSplatter
 
 struct ContentView: View {
     @State private var isPickingFile = false
+    @State private var isARModeEnabled = false
 
 #if os(macOS)
     @Environment(\.openWindow) private var openWindow
@@ -40,8 +42,29 @@ struct ContentView: View {
         NavigationStack(path: $navigationPath) {
             mainView
                 .navigationDestination(for: ModelIdentifier.self) { modelIdentifier in
-                    MetalKitSceneView(modelIdentifier: modelIdentifier)
-                        .navigationTitle(modelIdentifier.description)
+                    VStack {
+                        #if os(iOS)
+                        HStack {
+                            Text("AR Mode")
+                            Toggle("", isOn: $isARModeEnabled)
+                                .labelsHidden()
+                        }
+                        .padding()
+                        #endif
+                        
+                        #if os(iOS)
+                        if isARModeEnabled {
+                            ARSceneView(modelIdentifier: ARModelIdentifier(from: modelIdentifier), isAREnabled: $isARModeEnabled)
+                                .navigationTitle(modelIdentifier.description + " (AR)")
+                        } else {
+                            MetalKitSceneView(modelIdentifier: modelIdentifier)
+                                .navigationTitle(modelIdentifier.description)
+                        }
+                        #else
+                        MetalKitSceneView(modelIdentifier: modelIdentifier)
+                            .navigationTitle(modelIdentifier.description)
+                        #endif
+                    }
                 }
         }
 #endif // os(iOS)

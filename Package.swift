@@ -62,7 +62,7 @@ let package = Package(
         ),
         .target(
             name: "MetalSplatter",
-            dependencies: [ "PLYIO", "SplatIO" ],
+            dependencies: [ "PLYIO", "SplatIO", "SampleBoxRenderer" ],
             path: "MetalSplatter",
             sources: [ "Sources" ],
             resources: [ .process("Resources") ]
