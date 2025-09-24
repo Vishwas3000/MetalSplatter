@@ -15,7 +15,10 @@ vertex ARCameraVertexOut arCameraVertexShader(const device ARCameraVertexIn* ver
                                                uint vid [[vertex_id]]) {
     ARCameraVertexOut out;
     ARCameraVertexIn vert = vertices[vid];
-    out.position = float4(vert.position, 0.0, 1.0);
+    
+    // CRITICAL: Position the camera background at FAR DEPTH (z = 1.0)
+    // This ensures all 3D content renders in front of the camera background
+    out.position = float4(vert.position, 1.0, 1.0);  // z = 1.0 (far plane)
     out.texCoord = vert.texCoord;
     return out;
 }
@@ -28,14 +31,18 @@ fragment float4 arCameraFragmentShader(ARCameraVertexOut in [[stage_in]],
     
     // Check if we have YUV textures (texture 1 is bound) or RGB texture (only texture 0)
     if (uvTexture.get_width() > 0) {
-        // YUV to RGB conversion (ITU-R BT.709)
+        // Proper YUV to RGB conversion for ARKit camera feed (ITU-R BT.709)
         float y = yTexture.sample(textureSampler, in.texCoord).r;
-        float2 uv = uvTexture.sample(textureSampler, in.texCoord).rg - 0.5;
+        float2 uv = uvTexture.sample(textureSampler, in.texCoord).rg - float2(0.5, 0.5);
         
+        // Use proper BT.709 conversion matrix
         float3 rgb;
-        rgb.r = y + 1.402 * uv.g;
-        rgb.g = y - 0.344136 * uv.r - 0.714136 * uv.g;
-        rgb.b = y + 1.772 * uv.r;
+        rgb.r = y + 1.28033 * uv.g;
+        rgb.g = y - 0.21482 * uv.r - 0.38059 * uv.g;
+        rgb.b = y + 2.12798 * uv.r;
+        
+        // Clamp to valid range
+        rgb = saturate(rgb);
         
         return float4(rgb, 1.0);
     } else {

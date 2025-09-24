@@ -3,3 +3,7 @@ xcuserdata
 DerivedData/
 .swiftpm
 
+# Build folders
+.build/
+**/.build/
+

@@ -5,7 +5,7 @@ import MetalSplatter
 
 struct ContentView: View {
     @State private var isPickingFile = false
-    @State private var isARModeEnabled = false
+    @State private var isARModeEnabled = true
 
 #if os(macOS)
     @Environment(\.openWindow) private var openWindow
