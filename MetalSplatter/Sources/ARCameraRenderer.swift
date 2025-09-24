@@ -121,11 +121,11 @@ public class ARCameraRenderer {
     
     private func setupDepthState() {
         let depthDescriptor = MTLDepthStencilDescriptor()
-        depthDescriptor.depthCompareFunction = .always  // Camera background always writes
-        depthDescriptor.isDepthWriteEnabled = true      // Write depth values
+        depthDescriptor.depthCompareFunction = .equal  // Only render where depth == 0.0 (no splats)
+        depthDescriptor.isDepthWriteEnabled = false    // Don't write depth, preserve splat depths
         
         depthStencilState = device.makeDepthStencilState(descriptor: depthDescriptor)
-        Self.log.info("AR camera depth stencil state created")
+        Self.log.info("AR camera depth stencil state created - renders only where depth == 0.0")
     }
     
     public func render(

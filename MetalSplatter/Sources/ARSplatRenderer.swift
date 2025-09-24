@@ -293,71 +293,107 @@ public class ARSplatRenderer: NSObject {
         to commandBuffer: MTLCommandBuffer
     ) throws {
         
-        print("🎬 Starting SINGLE-PASS AR composition")
+        print("🎬 Starting REVERSE-ORDER AR composition (Splats → Camera)")
         
-        // CAMERA BACKGROUND PASS: Render camera feed covering entire screen
-        let renderPassDescriptor = MTLRenderPassDescriptor()
-        renderPassDescriptor.colorAttachments[0].texture = colorTexture
-        renderPassDescriptor.colorAttachments[0].loadAction = .clear
-        renderPassDescriptor.colorAttachments[0].storeAction = .store  // STORE to preserve for next pass
-        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        
-        if let depthTexture = depthTexture {
-            renderPassDescriptor.depthAttachment.texture = depthTexture
-            renderPassDescriptor.depthAttachment.loadAction = .clear
-            renderPassDescriptor.depthAttachment.storeAction = .store
-            renderPassDescriptor.depthAttachment.clearDepth = 1.0
-        }
-        
-        renderPassDescriptor.rasterizationRateMap = rasterizationRateMap
-        renderPassDescriptor.renderTargetArrayLength = renderTargetArrayLength
-        
-        guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
-            throw NSError(domain: "ARSplatRenderer", code: 2,
-                         userInfo: [NSLocalizedDescriptionKey: "Failed to create AR composition render encoder"])
-        }
-        
-        renderEncoder.label = "AR Composition (Camera + Splats)"
-        
-        // Step 1: Render AR camera background at far depth (z = 1.0)
-        // This fills the entire screen and writes depth = 1.0 everywhere
-        print("📷 Rendering camera background across full screen")
-        arCameraRenderer.render(frame: frame, to: renderEncoder)
-        
-        renderEncoder.endEncoding()
-        
-        // Step 2: Render splats at near depth (z < 1.0) positioned at screen center  
-        // The depth test will ensure splats appear in front of the camera background
         let splatCount = coreSplatRenderer.splatBuffer.count
+        
+        // PASS 1: Render splats first with alpha masking
         if splatCount > 0 {
-            print("✨ Rendering \(splatCount) splats at screen center with preserved background")
+            print("✨ PASS 1: Rendering \(splatCount) splats as alpha mask")
+            
+            let splatRenderPassDescriptor = MTLRenderPassDescriptor()
+            splatRenderPassDescriptor.colorAttachments[0].texture = colorTexture
+            splatRenderPassDescriptor.colorAttachments[0].loadAction = .clear
+            splatRenderPassDescriptor.colorAttachments[0].storeAction = .store
+            // Clear to transparent - areas without splats will be transparent (alpha = 0)
+            splatRenderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            
+            if let depthTexture = depthTexture {
+                splatRenderPassDescriptor.depthAttachment.texture = depthTexture
+                splatRenderPassDescriptor.depthAttachment.loadAction = .clear
+                splatRenderPassDescriptor.depthAttachment.storeAction = .store
+                splatRenderPassDescriptor.depthAttachment.clearDepth = 0.0  // Clear to near plane
+            }
+            
+            splatRenderPassDescriptor.rasterizationRateMap = rasterizationRateMap
+            splatRenderPassDescriptor.renderTargetArrayLength = renderTargetArrayLength
+            
             let arViewport = createARViewportCentered(from: frame, colorTexture: colorTexture)
             
-            print("   🎯 Enabling preserveExistingContent to maintain camera background")
-            print("   🎯 Camera background should be at depth = 1.0, splats at depth < 1.0")
+            // Render splats with normal behavior (no preserve mode needed)
+            coreSplatRenderer.preserveExistingContent = false
             
-            // Enable preservation of existing content (camera background + depth)
-            coreSplatRenderer.preserveExistingContent = true
-            
-            // Render splats on top of the camera background
             try coreSplatRenderer.render(
                 viewports: [arViewport],
                 colorTexture: colorTexture,
-                colorStoreAction: colorStoreAction,
+                colorStoreAction: .store,  // Store splat results
                 depthTexture: depthTexture,
                 rasterizationRateMap: rasterizationRateMap,
                 renderTargetArrayLength: renderTargetArrayLength,
                 to: commandBuffer
             )
             
-            // Reset to normal behavior for future renders
-            coreSplatRenderer.preserveExistingContent = false
-            print("   ✅ Splats rendered over camera background")
+            print("   ✅ Splats rendered as alpha mask")
         } else {
-            print("📷 No splats to render - camera background only")
+            print("⚠️  No splats to render - clearing for camera background only")
+            
+            // No splats, just clear for camera background
+            let clearRenderPassDescriptor = MTLRenderPassDescriptor()
+            clearRenderPassDescriptor.colorAttachments[0].texture = colorTexture
+            clearRenderPassDescriptor.colorAttachments[0].loadAction = .clear
+            clearRenderPassDescriptor.colorAttachments[0].storeAction = .store
+            clearRenderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            
+            if let depthTexture = depthTexture {
+                clearRenderPassDescriptor.depthAttachment.texture = depthTexture
+                clearRenderPassDescriptor.depthAttachment.loadAction = .clear
+                clearRenderPassDescriptor.depthAttachment.storeAction = .store
+                clearRenderPassDescriptor.depthAttachment.clearDepth = 0.0
+            }
+            
+            guard let clearEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: clearRenderPassDescriptor) else {
+                throw NSError(domain: "ARSplatRenderer", code: 3,
+                             userInfo: [NSLocalizedDescriptionKey: "Failed to create clear render encoder"])
+            }
+            clearEncoder.label = "Clear for Camera Background"
+            clearEncoder.endEncoding()
         }
         
-        print("✅ AR composition completed")
+        // PASS 2: Render camera background with depth testing
+        print("📷 PASS 2: Rendering camera background with depth testing")
+        
+        let cameraRenderPassDescriptor = MTLRenderPassDescriptor()
+        cameraRenderPassDescriptor.colorAttachments[0].texture = colorTexture
+        cameraRenderPassDescriptor.colorAttachments[0].loadAction = .load  // Preserve splat pixels
+        cameraRenderPassDescriptor.colorAttachments[0].storeAction = colorStoreAction
+        cameraRenderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        
+        if let depthTexture = depthTexture {
+            cameraRenderPassDescriptor.depthAttachment.texture = depthTexture
+            cameraRenderPassDescriptor.depthAttachment.loadAction = .load  // Preserve splat depths
+            cameraRenderPassDescriptor.depthAttachment.storeAction = .store
+        }
+        
+        cameraRenderPassDescriptor.rasterizationRateMap = rasterizationRateMap
+        cameraRenderPassDescriptor.renderTargetArrayLength = renderTargetArrayLength
+        
+        guard let cameraEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: cameraRenderPassDescriptor) else {
+            throw NSError(domain: "ARSplatRenderer", code: 4,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to create camera render encoder"])
+        }
+        
+        cameraEncoder.label = "AR Camera Background Fill"
+        
+        // Render camera background - it will only show where depth = 1.0 (no splats rendered)
+        arCameraRenderer.render(frame: frame, to: cameraEncoder)
+        
+        cameraEncoder.endEncoding()
+        
+        print("✅ Reverse-order AR composition completed")
+        print("   Expected behavior:")
+        print("   - Where splats exist (depth > 0.0): Splats visible, camera blocked by .equal test")
+        print("   - Where no splats exist (depth = 0.0): Camera visible via .equal test")
+        print("   Result: Splats mask camera feed - camera visible only where no splats exist")
     }
     
     // This method is no longer used - we're using two-pass rendering instead

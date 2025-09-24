@@ -16,9 +16,9 @@ vertex ARCameraVertexOut arCameraVertexShader(const device ARCameraVertexIn* ver
     ARCameraVertexOut out;
     ARCameraVertexIn vert = vertices[vid];
     
-    // CRITICAL: Position the camera background at FAR DEPTH (z = 1.0)
-    // This ensures all 3D content renders in front of the camera background
-    out.position = float4(vert.position, 1.0, 1.0);  // z = 1.0 (far plane)
+    // CRITICAL: Position the camera background at NEAR DEPTH (z = 0.0)
+    // Camera only renders where depth buffer == 0.0 (no splats rendered)
+    out.position = float4(vert.position, 0.0, 1.0);  // z = 0.0 (near plane)
     out.texCoord = vert.texCoord;
     return out;
 }
@@ -44,10 +44,11 @@ fragment float4 arCameraFragmentShader(ARCameraVertexOut in [[stage_in]],
         // Clamp to valid range
         rgb = saturate(rgb);
         
-        return float4(rgb, 1.0);
+        return float4(rgb, 1.0);  // Alpha = 1.0 for opaque camera background
     } else {
         // Direct RGB/BGRA texture
-        return yTexture.sample(textureSampler, in.texCoord);
+        float4 color = yTexture.sample(textureSampler, in.texCoord);
+        return float4(color.rgb, 1.0);  // Ensure alpha = 1.0 for opaque camera background
     }
 }
 
@@ -56,5 +57,6 @@ fragment float4 arCameraFragmentShaderRGB(ARCameraVertexOut in [[stage_in]],
     constexpr sampler textureSampler(mag_filter::linear,
                                      min_filter::linear);
     
-    return rgbTexture.sample(textureSampler, in.texCoord);
+    float4 color = rgbTexture.sample(textureSampler, in.texCoord);
+    return float4(color.rgb, 1.0);  // Ensure alpha = 1.0 for opaque camera background
 }
