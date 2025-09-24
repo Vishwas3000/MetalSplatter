@@ -20,6 +20,7 @@ public struct ARSceneView: UIViewRepresentable {
         var displayLink: CADisplayLink?
         weak var metalKitView: MTKView?
         var mtkViewDelegate: ARSceneViewDelegate? // Keep strong reference to delegate
+        var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
         
         deinit {
             renderer?.pauseARSession()
@@ -324,7 +325,7 @@ class ARSceneViewDelegate: NSObject, MTKViewDelegate {
         self.renderer = renderer
         self.coordinator = coordinator
         super.init()
-        print("ARSceneViewDelegate initialized")
+        print("ARSceneViewDelegate initialized with Metal-based orientation tracking")
     }
     
     func draw(in view: MTKView) {
@@ -389,8 +390,38 @@ class ARSceneViewDelegate: NSObject, MTKViewDelegate {
         print("   View frame: \(view.frame)")
         print("   View bounds: \(view.bounds)")
         
-        // Update any size-dependent resources
-        // For now, just trigger a redraw
+        // Detect orientation based on aspect ratio change
+        let aspectRatio = size.width / size.height
+        let newOrientation: UIInterfaceOrientation
+        
+        if aspectRatio > 1.0 {
+            // Landscape - determine which direction
+            let deviceOrientation = UIDevice.current.orientation
+            if deviceOrientation == .landscapeLeft {
+                newOrientation = .landscapeRight  // Device left = interface right
+            } else {
+                newOrientation = .landscapeLeft   // Default landscape
+            }
+        } else {
+            // Portrait - determine which direction  
+            let deviceOrientation = UIDevice.current.orientation
+            if deviceOrientation == .portraitUpsideDown {
+                newOrientation = .portraitUpsideDown
+            } else {
+                newOrientation = .portrait  // Default portrait
+            }
+        }
+        
+        // Update orientation in coordinator
+        if let coordinator = coordinator {
+            coordinator.currentInterfaceOrientation = newOrientation
+            print("🔄 Orientation detected via MTKView: \(String(describing: newOrientation)) (aspect: \(String(format: "%.2f", aspectRatio)))")
+        }
+        
+        // Notify renderer about the orientation change
+        renderer.handleOrientationChange(newOrientation, viewportSize: size)
+        
+        // Trigger a redraw
         view.setNeedsDisplay()
     }
 }

@@ -6,12 +6,17 @@ struct ARCameraVertexIn {
     float2 texCoord;
 };
 
+struct CameraTransform {
+    float3x3 displayTransform;
+};
+
 struct ARCameraVertexOut {
     float4 position [[position]];
     float2 texCoord;
 };
 
 vertex ARCameraVertexOut arCameraVertexShader(const device ARCameraVertexIn* vertices [[buffer(0)]],
+                                               const device CameraTransform& transform [[buffer(1)]],
                                                uint vid [[vertex_id]]) {
     ARCameraVertexOut out;
     ARCameraVertexIn vert = vertices[vid];
@@ -19,7 +24,11 @@ vertex ARCameraVertexOut arCameraVertexShader(const device ARCameraVertexIn* ver
     // CRITICAL: Position the camera background at NEAR DEPTH (z = 0.0)
     // Camera only renders where depth buffer == 0.0 (no splats rendered)
     out.position = float4(vert.position, 0.0, 1.0);  // z = 0.0 (near plane)
-    out.texCoord = vert.texCoord;
+    
+    // Apply display transform to texture coordinates to handle device rotation
+    float3 transformedTexCoord = transform.displayTransform * float3(vert.texCoord, 1.0);
+    out.texCoord = transformedTexCoord.xy;
+    
     return out;
 }
 
@@ -27,28 +36,29 @@ fragment float4 arCameraFragmentShader(ARCameraVertexOut in [[stage_in]],
                                        texture2d<float> yTexture [[texture(0)]],
                                        texture2d<float> uvTexture [[texture(1)]]) {
     constexpr sampler textureSampler(mag_filter::linear,
-                                     min_filter::linear);
+                                     min_filter::linear,
+                                     address::clamp_to_edge);
     
-    // Check if we have YUV textures (texture 1 is bound) or RGB texture (only texture 0)
-    if (uvTexture.get_width() > 0) {
-        // Proper YUV to RGB conversion for ARKit camera feed (ITU-R BT.709)
+    // Check if we have YUV textures by checking if UV texture width > 0
+    if (uvTexture.get_width() == 0) {
+        // Direct RGB/BGRA texture
+        float4 color = yTexture.sample(textureSampler, in.texCoord);
+        return float4(color.rgb, 1.0);  // Ensure alpha = 1.0 for opaque camera background
+    } else {
+        // YUV to RGB conversion for ARKit camera feed (ITU-R BT.709 limited range)
         float y = yTexture.sample(textureSampler, in.texCoord).r;
         float2 uv = uvTexture.sample(textureSampler, in.texCoord).rg - float2(0.5, 0.5);
         
-        // Use proper BT.709 conversion matrix
+        // Correct BT.709 conversion matrix for limited range YUV
         float3 rgb;
-        rgb.r = y + 1.28033 * uv.g;
-        rgb.g = y - 0.21482 * uv.r - 0.38059 * uv.g;
-        rgb.b = y + 2.12798 * uv.r;
+        rgb.r = y + 1.5748 * uv.g;                    // Red component
+        rgb.g = y - 0.1873 * uv.r - 0.4681 * uv.g;   // Green component  
+        rgb.b = y + 1.8556 * uv.r;                    // Blue component
         
         // Clamp to valid range
         rgb = saturate(rgb);
         
         return float4(rgb, 1.0);  // Alpha = 1.0 for opaque camera background
-    } else {
-        // Direct RGB/BGRA texture
-        float4 color = yTexture.sample(textureSampler, in.texCoord);
-        return float4(color.rgb, 1.0);  // Ensure alpha = 1.0 for opaque camera background
     }
 }
 

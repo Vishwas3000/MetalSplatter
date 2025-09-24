@@ -5,6 +5,7 @@ import Metal
 import MetalKit
 import ARKit
 import AVFoundation
+import UIKit
 import os
 
 public class ARCameraRenderer {
@@ -19,14 +20,18 @@ public class ARCameraRenderer {
     private var vertexBuffer: MTLBuffer?
     private var textureCache: CVMetalTextureCache!
     private var depthStencilState: MTLDepthStencilState?
+    private var transformBuffer: MTLBuffer?
     
     private struct Vertex {
         let position: SIMD2<Float>
         let texCoord: SIMD2<Float>
     }
     
-    // Standard texture coordinates with Y-flip to correct ARKit camera orientation
-    // ARKit camera textures are typically flipped vertically from what we expect
+    private struct CameraTransform {
+        let displayTransform: simd_float3x3
+    }
+    
+    // Base texture coordinates - will be transformed based on device orientation
     private let quadVertices: [Vertex] = [
         Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(1, 1)),  // Bottom-left → Top-left of texture (Y-flipped)
         Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(1, 0)),  // Bottom-right → Top-right of texture (Y-flipped)
@@ -59,6 +64,7 @@ public class ARCameraRenderer {
         setupPipelineState()
         setupVertexBuffer()
         setupDepthState()
+        setupTransformBuffer()
         
         if pipelineState == nil {
             Self.log.error("Pipeline state is nil after setup")
@@ -129,21 +135,68 @@ public class ARCameraRenderer {
         Self.log.info("AR camera depth stencil state created - renders only where depth == 0.0")
     }
     
+    private func setupTransformBuffer() {
+        transformBuffer = device.makeBuffer(
+            length: MemoryLayout<CameraTransform>.stride,
+            options: .storageModeShared
+        )
+        transformBuffer?.label = "AR Camera Transform Buffer"
+    }
+    
     public func render(
         frame: ARFrame,
+        to renderEncoder: MTLRenderCommandEncoder
+    ) {
+        render(frame: frame, viewportSize: CGSize(width: 1, height: 1), interfaceOrientation: .portrait, to: renderEncoder)
+    }
+    
+    public func render(
+        frame: ARFrame,
+        viewportSize: CGSize,
+        interfaceOrientation: UIInterfaceOrientation,
         to renderEncoder: MTLRenderCommandEncoder
     ) {
         Self.log.info("AR camera render called")
         
         guard let pipelineState = pipelineState,
-              let vertexBuffer = vertexBuffer else {
-            Self.log.error("AR camera renderer not properly initialized - pipelineState: \(self.pipelineState != nil), vertexBuffer: \(self.vertexBuffer != nil)")
+              let vertexBuffer = vertexBuffer,
+              let transformBuffer = transformBuffer else {
+            Self.log.error("AR camera renderer not properly initialized - pipelineState: \(self.pipelineState != nil), vertexBuffer: \(self.vertexBuffer != nil), transformBuffer: \(self.transformBuffer != nil)")
             return
         }
+        
+        // Calculate display transform based on device orientation and viewport
+        let cgTransform = frame.displayTransform(for: interfaceOrientation, viewportSize: viewportSize)
+        
+        // Debug the transform values
+        print("🔧 Display transform: a=\(cgTransform.a), b=\(cgTransform.b), c=\(cgTransform.c), d=\(cgTransform.d), tx=\(cgTransform.tx), ty=\(cgTransform.ty)")
+        print("📐 Viewport: \(viewportSize), Orientation: \(interfaceOrientation)")
+        
+        // TEMPORARY: Use identity transform to test
+        let identityTransform = simd_float3x3(
+            simd_float3(1, 0, 0),  // Column 1
+            simd_float3(0, 1, 0),  // Column 2
+            simd_float3(0, 0, 1)   // Column 3
+        )
+        
+        // Convert CGAffineTransform to simd_float3x3 (column-major)
+        let displayTransform = simd_float3x3(
+            simd_float3(Float(cgTransform.a), Float(cgTransform.b), 0),  // Column 1
+            simd_float3(Float(cgTransform.c), Float(cgTransform.d), 0),  // Column 2
+            simd_float3(Float(cgTransform.tx), Float(cgTransform.ty), 1) // Column 3
+        )
+        
+        // Use identity transform for now to test
+        let cameraTransform = CameraTransform(displayTransform: identityTransform)
+        
+        // Update transform buffer
+        let transformPointer = transformBuffer.contents().bindMemory(to: CameraTransform.self, capacity: 1)
+        transformPointer.pointee = cameraTransform
         
         renderEncoder.pushDebugGroup("AR Camera Background")
         renderEncoder.setRenderPipelineState(pipelineState)
         renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+        renderEncoder.setVertexBuffer(transformBuffer, offset: 0, index: 1)
         
         // Set depth stencil state for proper depth writing
         if let depthStencilState = depthStencilState {

@@ -10,6 +10,7 @@ import SampleBoxRenderer
 import SplatIO
 import simd
 import os
+import UIKit
 
 public class ARSplatRenderer: NSObject {
     private static let log = Logger(
@@ -42,6 +43,10 @@ public class ARSplatRenderer: NSObject {
     public var splatPosition: SIMD3<Float> = SIMD3(0, 0, -0.5)  // Closer to camera
     public var splatRotation: simd_quatf = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
     public var fixGravityFlip: Bool = true  // Apply 180° X-axis rotation to fix gravity orientation
+    
+    // Orientation tracking
+    private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
+    private var currentViewportSize: CGSize = CGSize(width: 1, height: 1)
     
     public init(device: MTLDevice,
                 colorFormat: MTLPixelFormat,
@@ -87,6 +92,23 @@ public class ARSplatRenderer: NSObject {
         if _isARSessionRunning {
             arSession.pause()
         }
+    }
+    
+    // MARK: - Orientation Handling
+    
+    public func handleOrientationChange(_ orientation: UIInterfaceOrientation, viewportSize: CGSize) {
+        currentInterfaceOrientation = orientation
+        currentViewportSize = viewportSize
+        let logMessage: String = "Orientation changed to: \(String(describing: orientation)), viewport: \(viewportSize)"
+        Self.log.info("\(logMessage)")
+    }
+    
+    private func getCurrentInterfaceOrientation() -> UIInterfaceOrientation {
+        return currentInterfaceOrientation
+    }
+    
+    private func getCurrentViewportSize() -> CGSize {
+        return currentViewportSize
     }
     
     public func startARSession() {
@@ -384,8 +406,19 @@ public class ARSplatRenderer: NSObject {
         
         cameraEncoder.label = "AR Camera Background Fill"
         
+        // Use tracked orientation and viewport size from Metal delegate
+        let viewportSize = getCurrentViewportSize()
+        let interfaceOrientation = getCurrentInterfaceOrientation()
+        
+        print("🎥 Rendering camera with orientation: \(String(describing: interfaceOrientation)), viewport: \(viewportSize)")
+        
         // Render camera background - it will only show where depth = 1.0 (no splats rendered)
-        arCameraRenderer.render(frame: frame, to: cameraEncoder)
+        arCameraRenderer.render(
+            frame: frame,
+            viewportSize: viewportSize,
+            interfaceOrientation: interfaceOrientation,
+            to: cameraEncoder
+        )
         
         cameraEncoder.endEncoding()
         
