@@ -387,15 +387,12 @@ class ARSceneViewDelegate: NSObject, MTKViewDelegate {
     }
     
     func draw(in view: MTKView) {
-        print(">>> MTKView draw called on thread: \(Thread.current)")
-        print(">>> Draw cycle starting...")
         
         guard let drawable = view.currentDrawable else {
             print(">>> No drawable available")
             return
         }
-        print(">>> Drawable acquired: \(drawable.texture.width)x\(drawable.texture.height)")
-        
+
         guard let device = view.device else {
             print("No Metal device available")
             return
