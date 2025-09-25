@@ -44,6 +44,11 @@ public class ARSplatRenderer: NSObject {
     public var splatRotation: simd_quatf = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
     public var fixGravityFlip: Bool = true  // Apply 180° X-axis rotation to fix gravity orientation
     
+    // Zoom configuration
+    private let minScale: Float = 0.01     // Minimum zoom (very small)
+    private let maxScale: Float = 4.0      // Maximum zoom (2x original size)
+    private let zoomStep: Float = 0.8      // Zoom increment per step
+    
     // Orientation tracking
     private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
     private var currentViewportSize: CGSize = CGSize(width: 1, height: 1)
@@ -463,6 +468,7 @@ public class ARSplatRenderer: NSObject {
         
         // Scale down for better visibility in AR
         let scaleMatrix = matrix4x4_scale(splatScale, splatScale, splatScale)
+        print("🔍 Current splat scale being applied: \(splatScale)")
         
         // Position splats at screen center, in front of camera
         // Z = -0.5 means 0.5 meters in front of the camera
@@ -495,6 +501,59 @@ public class ARSplatRenderer: NSObject {
         splatScale = 0.1
         splatPosition = SIMD3(0, 0, -0.5)
         splatRotation = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+    }
+    
+    // MARK: - Zoom Controls
+    
+    /// Zoom in the splat model
+    public func zoomIn() {
+        let newScale = min(splatScale + zoomStep, maxScale)
+        if newScale != splatScale {
+            splatScale = newScale
+            Self.log.info("Zoomed in to scale: \(self.splatScale)")
+        }
+    }
+    
+    /// Zoom out the splat model
+    public func zoomOut() {
+        let newScale = max(splatScale - zoomStep, minScale)
+        if newScale != splatScale {
+            splatScale = newScale
+            Self.log.info("Zoomed out to scale: \(self.splatScale)")
+        }
+    }
+    
+    /// Set specific zoom level
+    /// - Parameter scale: The scale factor (will be clamped to min/max bounds)
+    public func setZoom(scale: Float) {
+        let clampedScale = max(minScale, min(scale, maxScale))
+        splatScale = clampedScale
+        Self.log.info("Set zoom scale to: \(self.splatScale)")
+    }
+    
+    /// Get current zoom level as a percentage (0.0 to 1.0)
+    /// where 0.0 = minimum scale and 1.0 = maximum scale
+    public var zoomLevel: Float {
+        return (splatScale - minScale) / (maxScale - minScale)
+    }
+    
+    /// Set zoom level as a percentage (0.0 to 1.0)
+    /// - Parameter level: Percentage between 0.0 (min) and 1.0 (max)
+    public func setZoomLevel(_ level: Float) {
+        let clampedLevel = max(0.0, min(level, 1.0))
+        let newScale = minScale + clampedLevel * (maxScale - minScale)
+        splatScale = newScale
+        Self.log.info("Set zoom level to \(clampedLevel * 100)% (scale: \(self.splatScale))")
+    }
+    
+    /// Check if can zoom in further
+    public var canZoomIn: Bool {
+        return splatScale < maxScale
+    }
+    
+    /// Check if can zoom out further
+    public var canZoomOut: Bool {
+        return splatScale > minScale
     }
 }
 
@@ -536,16 +595,16 @@ extension ARSplatRenderer: ARSessionDelegate {
     
     // This is critical - it's called when new frames arrive!
     public func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        print("*** NEW CAMERA FRAME arrived on thread: \(Thread.current)")
-        print("*** Frame timestamp: \(frame.timestamp)")
-        print("*** Frame camera intrinsics: \(frame.camera.intrinsics)")
-        print("*** Captured image size: \(CVPixelBufferGetWidth(frame.capturedImage))x\(CVPixelBufferGetHeight(frame.capturedImage))")
+//        print("*** NEW CAMERA FRAME arrived on thread: \(Thread.current)")
+//        print("*** Frame timestamp: \(frame.timestamp)")
+//        print("*** Frame camera intrinsics: \(frame.camera.intrinsics)")
+//        print("*** Captured image size: \(CVPixelBufferGetWidth(frame.capturedImage))x\(CVPixelBufferGetHeight(frame.capturedImage))")
         
         // CRITICAL: Check if currentFrame is being updated
         if let currentFrame = session.currentFrame {
-            print("*** Session.currentFrame timestamp: \(currentFrame.timestamp)")
+//            print("*** Session.currentFrame timestamp: \(currentFrame.timestamp)")
         } else {
-            print("*** Session.currentFrame is NIL!")
+//            print("*** Session.currentFrame is NIL!")
         }
     }
 }

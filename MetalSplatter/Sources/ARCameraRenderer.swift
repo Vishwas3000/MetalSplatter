@@ -167,11 +167,7 @@ public class ARCameraRenderer {
         
         // Calculate display transform based on device orientation and viewport
         let cgTransform = frame.displayTransform(for: interfaceOrientation, viewportSize: viewportSize)
-        
-        // Debug the transform values
-        print("🔧 Display transform: a=\(cgTransform.a), b=\(cgTransform.b), c=\(cgTransform.c), d=\(cgTransform.d), tx=\(cgTransform.tx), ty=\(cgTransform.ty)")
-        print("📐 Viewport: \(viewportSize), Orientation: \(interfaceOrientation)")
-        
+
         // TEMPORARY: Use identity transform to test
         let identityTransform = simd_float3x3(
             simd_float3(1, 0, 0),  // Column 1
@@ -201,25 +197,19 @@ public class ARCameraRenderer {
         // Set depth stencil state for proper depth writing
         if let depthStencilState = depthStencilState {
             renderEncoder.setDepthStencilState(depthStencilState)
-            print("🎯 AR camera depth stencil state set")
         }
         
         // Log camera texture dimensions for debugging aspect ratio issues
         let capturedImage = frame.capturedImage
         let cameraWidth = CVPixelBufferGetWidth(capturedImage)
         let cameraHeight = CVPixelBufferGetHeight(capturedImage)
-        print("📷 Camera texture dimensions: \(cameraWidth) x \(cameraHeight)")
-        print("📷 Camera aspect ratio: \(Float(cameraWidth) / Float(cameraHeight))")
-        
+
         let pixelFormat = CVPixelBufferGetPixelFormatType(capturedImage)
-        Self.log.info("Captured image pixel format: \(pixelFormat)")
         
         if pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
            pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
-            Self.log.info("Rendering YUV frame")
             renderYUVFrame(capturedImage, renderEncoder: renderEncoder)
         } else {
-            Self.log.info("Rendering RGB frame")
             renderRGBFrame(capturedImage, renderEncoder: renderEncoder)
         }
         
@@ -237,25 +227,19 @@ public class ARCameraRenderer {
         let uvWidth = CVPixelBufferGetWidthOfPlane(pixelBuffer, 1)
         let uvHeight = CVPixelBufferGetHeightOfPlane(pixelBuffer, 1)
         
-        print("Creating Y texture: \(yWidth)x\(yHeight)")
         let yResult = CVMetalTextureCacheCreateTextureFromImage(
             kCFAllocatorDefault, textureCache, pixelBuffer, nil,
             .r8Unorm, yWidth, yHeight, 0, &yTexture
         )
-        print("Y texture creation result: \(yResult)")
         
-        print("Creating UV texture: \(uvWidth)x\(uvHeight)")
         let uvResult = CVMetalTextureCacheCreateTextureFromImage(
             kCFAllocatorDefault, textureCache, pixelBuffer, nil,
             .rg8Unorm, uvWidth, uvHeight, 1, &uvTexture
         )
-        print("UV texture creation result: \(uvResult)")
         
         if let yTexture = yTexture, let uvTexture = uvTexture,
            let yMetalTexture = CVMetalTextureGetTexture(yTexture),
            let uvMetalTexture = CVMetalTextureGetTexture(uvTexture) {
-            print("Setting Y texture: \(yMetalTexture.width)x\(yMetalTexture.height)")
-            print("Setting UV texture: \(uvMetalTexture.width)x\(uvMetalTexture.height)")
             renderEncoder.setFragmentTexture(yMetalTexture, index: 0)
             renderEncoder.setFragmentTexture(uvMetalTexture, index: 1)
         } else {

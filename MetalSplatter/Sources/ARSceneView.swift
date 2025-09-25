@@ -21,6 +21,8 @@ public struct ARSceneView: UIViewRepresentable {
         weak var metalKitView: MTKView?
         var mtkViewDelegate: ARSceneViewDelegate? // Keep strong reference to delegate
         var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
+        var pinchGestureRecognizer: UIPinchGestureRecognizer?
+        var doubleTapGestureRecognizer: UITapGestureRecognizer?
         
         deinit {
             renderer?.pauseARSession()
@@ -71,6 +73,49 @@ public struct ARSceneView: UIViewRepresentable {
             displayLink?.invalidate()
             displayLink = nil
             print("Display link stopped")
+        }
+        
+        @objc func handlePinchGesture(_ gesture: UIPinchGestureRecognizer) {
+            guard let renderer = renderer else { return }
+            
+            switch gesture.state {
+            case .began:
+                // Store the initial scale when gesture begins
+                print("🤏 Pinch gesture began")
+            case .changed:
+                // Calculate zoom based on gesture scale
+                let gestureScale = Float(gesture.scale)
+                
+                // Convert pinch scale to zoom level
+                // gesture.scale > 1.0 means zoom in, < 1.0 means zoom out
+                if gestureScale > 1.0 {
+                    // Zoom in
+                    let zoomAmount = (gestureScale - 1.0) * 0.05 // Adjust sensitivity
+                    renderer.setZoom(scale: renderer.splatScale + zoomAmount)
+                } else {
+                    // Zoom out
+                    let zoomAmount = (1.0 - gestureScale) * 0.05 // Adjust sensitivity
+                    renderer.setZoom(scale: renderer.splatScale - zoomAmount)
+                }
+                
+                // Reset the gesture scale to prevent accumulation
+                gesture.scale = 1.0
+                print("🔍 Zoom scale: \(renderer.splatScale)")
+            case .ended, .cancelled:
+                print("🤏 Pinch gesture ended")
+            default:
+                break
+            }
+        }
+        
+        @objc func handleDoubleTapGesture(_ gesture: UITapGestureRecognizer) {
+            guard let renderer = renderer else { return }
+            
+            if gesture.state == .ended {
+                // Double tap to reset zoom to default
+                renderer.setZoom(scale: 0.1) // Reset to default scale
+                print("↩️ Double tap: Reset zoom to default scale (0.1)")
+            }
         }
     }
     
@@ -210,6 +255,19 @@ public struct ARSceneView: UIViewRepresentable {
         // Ensure MTKView gets proper autoresizing
         metalKitView.translatesAutoresizingMaskIntoConstraints = true
         metalKitView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        
+        // Add pinch gesture for zooming
+        let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handlePinchGesture(_:)))
+        metalKitView.addGestureRecognizer(pinchGesture)
+        context.coordinator.pinchGestureRecognizer = pinchGesture
+        print("🤏 Added pinch gesture recognizer for zoom")
+        
+        // Add double tap gesture for zoom reset
+        let doubleTapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleDoubleTapGesture(_:)))
+        doubleTapGesture.numberOfTapsRequired = 2
+        metalKitView.addGestureRecognizer(doubleTapGesture)
+        context.coordinator.doubleTapGestureRecognizer = doubleTapGesture
+        print("👆 Added double tap gesture recognizer for zoom reset")
         
         return metalKitView
     }
