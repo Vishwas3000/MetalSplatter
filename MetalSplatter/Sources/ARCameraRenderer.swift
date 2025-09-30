@@ -102,7 +102,7 @@ public class ARCameraRenderer {
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm_srgb
         pipelineDescriptor.colorAttachments[0].isBlendingEnabled = false
         
-        // CRITICAL FIX: Set the depth format to match the framebuffer
+        // Set depth format to match framebuffer for direct rendering
         pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
         
         print("Pipeline descriptor configured:")
@@ -128,11 +128,11 @@ public class ARCameraRenderer {
     
     private func setupDepthState() {
         let depthDescriptor = MTLDepthStencilDescriptor()
-        depthDescriptor.depthCompareFunction = .equal  // Only render where depth == 0.0 (no splats)
-        depthDescriptor.isDepthWriteEnabled = false    // Don't write depth, preserve splat depths
+        depthDescriptor.depthCompareFunction = .always  // Always render camera background
+        depthDescriptor.isDepthWriteEnabled = true      // Write far depth so splats render in front
         
         depthStencilState = device.makeDepthStencilState(descriptor: depthDescriptor)
-        Self.log.info("AR camera depth stencil state created - renders only where depth == 0.0")
+        Self.log.info("AR camera depth stencil state created - renders to texture without depth")
     }
     
     private func setupTransformBuffer() {

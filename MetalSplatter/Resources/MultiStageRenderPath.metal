@@ -48,12 +48,12 @@ fragment FragmentStore multiStageSplatFragmentShader(FragmentIn in [[stage_in]],
     FragmentStore out;
 
     half alpha = splatFragmentAlpha(in.relativePosition, in.color.a);
-    half4 colorWithPremultipliedAlpha = half4(in.color.rgb * alpha, alpha);
-
+    half4 splatColor = half4(in.color.rgb * alpha, alpha);
+    
     half oneMinusAlpha = 1 - alpha;
 
     half4 previousColor = previousFragmentValues.color;
-    out.values.color = previousColor * oneMinusAlpha + colorWithPremultipliedAlpha;
+    out.values.color = previousColor * oneMinusAlpha + splatColor;
 
     float previousDepth = previousFragmentValues.depth;
     float depth = in.position.z;

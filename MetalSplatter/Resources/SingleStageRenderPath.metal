@@ -21,5 +21,12 @@ vertex FragmentIn singleStageSplatVertexShader(uint vertexID [[vertex_id]],
 
 fragment half4 singleStageSplatFragmentShader(FragmentIn in [[stage_in]]) {
     half alpha = splatFragmentAlpha(in.relativePosition, in.color.a);
-    return half4(alpha * in.color.rgb, alpha);
+    
+    // Discard fragments with very low alpha to let camera background show through
+    if (alpha < 0.01) {
+        discard_fragment();
+    }
+    
+    // Return splat color with proper alpha for blending over camera background
+    return half4(in.color.rgb * alpha, alpha);
 }

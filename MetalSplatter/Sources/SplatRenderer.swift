@@ -140,6 +140,7 @@ public class SplatRenderer {
 
     public var clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
     public var preserveExistingContent = false  // If true, uses .load instead of .clear
+    
 
     public var onSortStart: (() -> Void)?
     public var onSortComplete: ((TimeInterval) -> Void)?
@@ -469,6 +470,7 @@ public class SplatRenderer {
 
         return renderEncoder
     }
+    
 
     public func render(viewports: [ViewportDescriptor],
                        colorTexture: MTLTexture,

@@ -21,9 +21,8 @@ vertex ARCameraVertexOut arCameraVertexShader(const device ARCameraVertexIn* ver
     ARCameraVertexOut out;
     ARCameraVertexIn vert = vertices[vid];
     
-    // CRITICAL: Position the camera background at NEAR DEPTH (z = 0.0)
-    // Camera only renders where depth buffer == 0.0 (no splats rendered)
-    out.position = float4(vert.position, 0.0, 1.0);  // z = 0.0 (near plane)
+    // Position camera background at far depth so splats render in front
+    out.position = float4(vert.position, 1.0, 1.0);  // z = 1.0 (far plane)
     
     // Apply display transform to texture coordinates to handle device rotation
     float3 transformedTexCoord = transform.displayTransform * float3(vert.texCoord, 1.0);
