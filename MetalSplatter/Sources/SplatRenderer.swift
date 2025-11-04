@@ -228,6 +228,7 @@ public class SplatRenderer {
     public func read(from url: URL) async throws {
         var newPoints = SplatMemoryBuffer()
         try await newPoints.read(from: try AutodetectSceneReader(url))
+        print("reading from url: \(url)")
         try add(newPoints.points)
     }
 
@@ -371,6 +372,7 @@ public class SplatRenderer {
     }
 
     public func add(_ points: [SplatScenePoint]) throws {
+        print("adding points: \(points.count)")
         do {
             try ensureAdditionalCapacity(points.count)
         } catch {

@@ -23,6 +23,7 @@ public struct ARSceneView: UIViewRepresentable {
         var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
         var pinchGestureRecognizer: UIPinchGestureRecognizer?
         var doubleTapGestureRecognizer: UITapGestureRecognizer?
+        var isModelLoaded = false
         
         deinit {
             renderer?.pauseARSession()
@@ -204,17 +205,17 @@ public struct ARSceneView: UIViewRepresentable {
                     
                     if metalKitView.bounds.width > 0 && metalKitView.bounds.height > 0 {
                         print("✅ MTKView ready, loading model...")
-                        await loadModel(renderer: renderer)
+                        await loadModel(renderer: renderer, coordinator: context.coordinator)
                     } else {
                         print("⚠️  MTKView not ready yet, delaying model load...")
                         try await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1 more second
-                        await loadModel(renderer: renderer)
+                        await loadModel(renderer: renderer, coordinator: context.coordinator)
                     }
                 }
             } else {
                 print("AR not enabled, loading model immediately")
                 Task {
-                    await loadModel(renderer: renderer)
+                    await loadModel(renderer: renderer, coordinator: context.coordinator)
                 }
             }
             
@@ -294,10 +295,6 @@ public struct ARSceneView: UIViewRepresentable {
         // Force redraw
         print("🚀 Forcing setNeedsDisplay from updateUIView")
         view.setNeedsDisplay()
-        
-        Task {
-            await loadModel(renderer: renderer)
-        }
     }
     
     static public func dismantleUIView(_ uiView: MTKView, coordinator: Coordinator) {
@@ -306,8 +303,14 @@ public struct ARSceneView: UIViewRepresentable {
         coordinator.renderer?.pauseARSession()
     }
     
-    private func loadModel(renderer: ARSplatRenderer) async {
+    private func loadModel(renderer: ARSplatRenderer, coordinator: Coordinator) async {
         print("🎯 loadModel() called with modelIdentifier: \(String(describing: modelIdentifier))")
+        
+        // Check if model is already loaded
+        guard !coordinator.isModelLoaded else {
+            print("⚠️ Model already loaded, skipping duplicate load")
+            return
+        }
         
         do {
             // Check GPU memory before loading large splat files in AR mode
@@ -336,6 +339,7 @@ public struct ARSceneView: UIViewRepresentable {
                 // Try loading the splat file
                 do {
                     try await renderer.read(from: url)
+                    coordinator.isModelLoaded = true
                     print("✅ Gaussian Splat loaded successfully in AR mode")
                 } catch {
                     print("💥 Splat loading FAILED in AR mode: \(error)")
@@ -355,9 +359,11 @@ public struct ARSceneView: UIViewRepresentable {
                 print("📦 Loading Sample Box")
                 // For now, ARSplatRenderer doesn't directly support SampleBoxRenderer
                 // This would need additional integration
+                coordinator.isModelLoaded = true
                 break
             case .none:
                 print("❌ No model to load")
+                coordinator.isModelLoaded = true
                 break
             }
         } catch {
