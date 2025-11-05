@@ -24,9 +24,9 @@ vertex ARCameraVertexOut arCameraVertexShader(const device ARCameraVertexIn* ver
     // Position camera background at far depth so splats render in front
     out.position = float4(vert.position, 1.0, 1.0);  // z = 1.0 (far plane)
     
-    // Apply display transform to texture coordinates to handle device rotation
-    float3 transformedTexCoord = transform.displayTransform * float3(vert.texCoord, 1.0);
-    out.texCoord = transformedTexCoord.xy;
+    // For debugging, let's use texture coordinates directly without transform first
+    // TODO: Apply display transform properly once basic rendering works
+    out.texCoord = vert.texCoord;
     
     return out;
 }
@@ -38,12 +38,13 @@ fragment float4 arCameraFragmentShader(ARCameraVertexOut in [[stage_in]],
                                      min_filter::linear,
                                      address::clamp_to_edge);
     
-    // Check if we have YUV textures by checking if UV texture width > 0
-    if (uvTexture.get_width() == 0) {
-        // Direct RGB/BGRA texture
-        float4 color = yTexture.sample(textureSampler, in.texCoord);
-        return float4(color.rgb, 1.0);  // Ensure alpha = 1.0 for opaque camera background
-    } else {
+    // Check bounds to prevent sampling outside texture
+    if (in.texCoord.x < 0.0 || in.texCoord.x > 1.0 || in.texCoord.y < 0.0 || in.texCoord.y > 1.0) {
+        return float4(1.0, 0.0, 1.0, 1.0);  // Magenta for debugging out-of-bounds
+    }
+    
+    // Check if we have YUV textures by checking if UV texture is bound and has valid dimensions
+    if (uvTexture.get_width() > 0 && uvTexture.get_height() > 0) {
         // YUV to RGB conversion for ARKit camera feed (ITU-R BT.709 limited range)
         float y = yTexture.sample(textureSampler, in.texCoord).r;
         float2 uv = uvTexture.sample(textureSampler, in.texCoord).rg - float2(0.5, 0.5);
@@ -58,6 +59,10 @@ fragment float4 arCameraFragmentShader(ARCameraVertexOut in [[stage_in]],
         rgb = saturate(rgb);
         
         return float4(rgb, 1.0);  // Alpha = 1.0 for opaque camera background
+    } else {
+        // Direct RGB/BGRA texture
+        float4 color = yTexture.sample(textureSampler, in.texCoord);
+        return float4(color.rgb, 1.0);  // Ensure alpha = 1.0 for opaque camera background
     }
 }
 

@@ -131,10 +131,16 @@ public class SplatRenderer {
      resulting in a much more continuous and representative depth value, which is important for reprojection on Vision Pro.
      */
     private var useMultiStagePipeline: Bool {
+        // Multi-stage pipeline's initializeFragmentStore clears imageblock to black,
+        // which overwrites camera background in AR mode. Use single-stage when preserving content.
+        if preserveExistingContent {
+            return false
+        }
+        
 #if targetEnvironment(simulator)
-        false
+        return false
 #else
-        writeDepth && highQualityDepth
+        return writeDepth && highQualityDepth
 #endif
     }
 

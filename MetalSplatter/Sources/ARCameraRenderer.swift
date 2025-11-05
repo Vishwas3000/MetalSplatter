@@ -31,12 +31,12 @@ public class ARCameraRenderer {
         let displayTransform: simd_float3x3
     }
     
-    // Base texture coordinates - will be transformed based on device orientation
+    // Full-screen quad with standard texture coordinates
     private let quadVertices: [Vertex] = [
-        Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(1, 1)),  // Bottom-left → Top-left of texture (Y-flipped)
-        Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(1, 0)),  // Bottom-right → Top-right of texture (Y-flipped)
-        Vertex(position: SIMD2(-1,  1), texCoord: SIMD2(0, 1)),  // Top-left → Bottom-left of texture (Y-flipped)
-        Vertex(position: SIMD2( 1,  1), texCoord: SIMD2(0, 0))   // Top-right → Bottom-right of texture (Y-flipped)
+        Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(0, 1)),  // Bottom-left
+        Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(1, 1)),  // Bottom-right  
+        Vertex(position: SIMD2(-1,  1), texCoord: SIMD2(0, 0)),  // Top-left
+        Vertex(position: SIMD2( 1,  1), texCoord: SIMD2(1, 0))   // Top-right
     ]
     
     public init?(device: MTLDevice) {
@@ -167,13 +167,6 @@ public class ARCameraRenderer {
         
         // Calculate display transform based on device orientation and viewport
         let cgTransform = frame.displayTransform(for: interfaceOrientation, viewportSize: viewportSize)
-
-        // TEMPORARY: Use identity transform to test
-        let identityTransform = simd_float3x3(
-            simd_float3(1, 0, 0),  // Column 1
-            simd_float3(0, 1, 0),  // Column 2
-            simd_float3(0, 0, 1)   // Column 3
-        )
         
         // Convert CGAffineTransform to simd_float3x3 (column-major)
         let displayTransform = simd_float3x3(
@@ -182,8 +175,7 @@ public class ARCameraRenderer {
             simd_float3(Float(cgTransform.tx), Float(cgTransform.ty), 1) // Column 3
         )
         
-        // Use identity transform for now to test
-        let cameraTransform = CameraTransform(displayTransform: identityTransform)
+        let cameraTransform = CameraTransform(displayTransform: displayTransform)
         
         // Update transform buffer
         let transformPointer = transformBuffer.contents().bindMemory(to: CameraTransform.self, capacity: 1)
@@ -199,11 +191,7 @@ public class ARCameraRenderer {
             renderEncoder.setDepthStencilState(depthStencilState)
         }
         
-        // Log camera texture dimensions for debugging aspect ratio issues
         let capturedImage = frame.capturedImage
-        let cameraWidth = CVPixelBufferGetWidth(capturedImage)
-        let cameraHeight = CVPixelBufferGetHeight(capturedImage)
-
         let pixelFormat = CVPixelBufferGetPixelFormatType(capturedImage)
         
         if pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
@@ -242,9 +230,6 @@ public class ARCameraRenderer {
            let uvMetalTexture = CVMetalTextureGetTexture(uvTexture) {
             renderEncoder.setFragmentTexture(yMetalTexture, index: 0)
             renderEncoder.setFragmentTexture(uvMetalTexture, index: 1)
-        } else {
-            print("FAILED to create Metal textures from camera frame!")
-            print("yTexture: \(yTexture != nil), uvTexture: \(uvTexture != nil)")
         }
     }
     

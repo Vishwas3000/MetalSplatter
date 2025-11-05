@@ -322,10 +322,7 @@ public class ARSplatRenderer: NSObject {
         to commandBuffer: MTLCommandBuffer
     ) throws {
         
-        print("🎬 Starting proper two-pass AR composition")
-        
         // PASS 1: Render camera background directly to output texture
-        print("📷 PASS 1: Rendering camera background")
         
         let cameraPassDescriptor = MTLRenderPassDescriptor()
         cameraPassDescriptor.colorAttachments[0].texture = colorTexture
@@ -356,26 +353,8 @@ public class ARSplatRenderer: NSObject {
         )
         
         cameraEncoder.endEncoding()
-        print("   ✅ Camera background rendered")
         
         // PASS 2: Render splats with alpha blending over camera background
-        print("✨ PASS 2: Rendering splats with alpha blending")
-        
-        let splatPassDescriptor = MTLRenderPassDescriptor()
-        splatPassDescriptor.colorAttachments[0].texture = colorTexture
-        splatPassDescriptor.colorAttachments[0].loadAction = .load  // Preserve camera background
-        splatPassDescriptor.colorAttachments[0].storeAction = colorStoreAction
-        
-        // Setup depth for splat pass
-        if let depthTexture = depthTexture {
-            splatPassDescriptor.depthAttachment.texture = depthTexture
-            splatPassDescriptor.depthAttachment.loadAction = .load  // Preserve camera depth
-            splatPassDescriptor.depthAttachment.storeAction = .store
-        }
-        
-        splatPassDescriptor.rasterizationRateMap = rasterizationRateMap
-        splatPassDescriptor.renderTargetArrayLength = renderTargetArrayLength
-        
         let arViewport = createARViewportCentered(from: frame, colorTexture: colorTexture)
         
         // Configure for proper blending over existing background
@@ -390,9 +369,6 @@ public class ARSplatRenderer: NSObject {
             renderTargetArrayLength: renderTargetArrayLength,
             to: commandBuffer
         )
-        
-        print("   ✅ Splats rendered with alpha blending")
-        print("✅ Two-pass AR composition completed")
     }
     
     // This method is no longer used - we're using two-pass rendering instead
@@ -416,8 +392,6 @@ public class ARSplatRenderer: NSObject {
             orientation = .portrait
         }
         
-        print("📱 Using orientation: \(orientation) for viewport: \(textureSize)")
-        
         let projectionMatrix = camera.projectionMatrix(
             for: orientation,
             viewportSize: textureSize,
@@ -425,11 +399,8 @@ public class ARSplatRenderer: NSObject {
         )
         
         // Create model transform for splat positioning - CENTERED AT SCREEN CENTER
-        print("🎯 Positioning splats at screen center")
-        
         // Scale down for better visibility in AR
         let scaleMatrix = matrix4x4_scale(splatScale, splatScale, splatScale)
-        print("🔍 Current splat scale being applied: \(splatScale)")
         
         // Position splats at screen center, in front of camera
         // Z = -0.5 means 0.5 meters in front of the camera
@@ -446,9 +417,6 @@ public class ARSplatRenderer: NSObject {
         let modelMatrix = translationMatrix * gravityFixRotation * rotationMatrix * scaleMatrix
         let viewMatrix = camera.viewMatrix(for: orientation) * modelMatrix
         
-        print("   Splat position: \(centerPosition)")
-        print("   Splat scale: \(splatScale)")
-        print("   Screen size: \(textureSize)")
         
         return SplatRenderer.ViewportDescriptor(
             viewport: viewport,
