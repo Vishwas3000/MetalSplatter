@@ -173,19 +173,23 @@ public class ARSplatRenderer: NSObject {
         print("   AR Session running: \(_isARSessionRunning)")
         
         do {
-            try await coreSplatRenderer.read(from: url)
+            let fileExtension = url.pathExtension.lowercased()
+            
+            if fileExtension == "spz" {
+                // Handle SPZ files
+                let points = try await SPZSceneReader.read(from: url)
+                try coreSplatRenderer.add(points)
+            } else {
+                // Handle PLY/SPLAT files (existing code)
+                try await coreSplatRenderer.read(from: url)
+            }
+            
             print("✅ Splat loading completed successfully")
         } catch {
             print("❌ CRITICAL: Splat loading FAILED: \(error)")
-            print("   Error type: \(type(of: error))")
-            print("   Error description: \(error.localizedDescription)")
-            if let nsError = error as NSError? {
-                print("   Error domain: \(nsError.domain), code: \(nsError.code)")
-            }
             throw error
         }
     }
-    
     public func add(_ points: [SplatScenePoint]) throws {
         print("🔄 ARSplatRenderer.add() called with \(points.count) points")
         print("   Device: \(device.name), AR running: \(_isARSessionRunning)")

@@ -3,6 +3,8 @@ import Metal
 import MetalKit
 import os
 import SplatIO
+import simd
+import zlib
 
 #if arch(x86_64)
 typealias Float16 = Float
@@ -232,10 +234,20 @@ public class SplatRenderer {
     }
 
     public func read(from url: URL) async throws {
-        var newPoints = SplatMemoryBuffer()
-        try await newPoints.read(from: try AutodetectSceneReader(url))
-        print("reading from url: \(url)")
-        try add(newPoints.points)
+        print("🔄 SplatRenderer.read() called for: \(url.lastPathComponent)")
+        
+        let fileExtension = url.pathExtension.lowercased()
+        
+        if fileExtension == "spz" {
+            // Handle SPZ files
+            let points = try await SPZSceneReader.read(from: url)
+            try add(points)
+        } else {
+            // Handle PLY/SPLAT files (existing code)
+            var newPoints = SplatMemoryBuffer()
+            try await newPoints.read(from: try AutodetectSceneReader(url))
+            try add(newPoints.points)
+        }
     }
 
     private func resetPipelineStates() {
@@ -715,5 +727,21 @@ private extension MTLLibrary {
             fatalError("Unable to load required shader function: \"\(name)\"")
         }
         return result
+    }
+}
+
+class SPZSceneReader {
+    static func read(from url: URL) async throws -> [SplatScenePoint] {
+        print("🔄 Reading SPZ file: \(url.lastPathComponent)")
+        
+        // Parse the SPZ file
+        let parseResult = try SPZParser.parse(fileURL: url)
+        
+        print("✅ Parsed \(parseResult.splats.count) splats from SPZ")
+        
+        // Convert to SplatScenePoint array
+        let splatScenePoints = parseResult.splats.map { $0.toSplatScenePoint() }
+        
+        return splatScenePoints
     }
 }
