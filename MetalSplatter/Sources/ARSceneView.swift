@@ -7,11 +7,9 @@ import SplatIO
 
 public struct ARSceneView: UIViewRepresentable {
     public var modelIdentifier: ARModelIdentifier?
-    @Binding public var isAREnabled: Bool
     
-    public init(modelIdentifier: ARModelIdentifier?, isAREnabled: Binding<Bool>) {
+    public init(modelIdentifier: ARModelIdentifier?) {
         self.modelIdentifier = modelIdentifier
-        self._isAREnabled = isAREnabled
     }
     
     public class Coordinator {
@@ -185,36 +183,29 @@ public struct ARSceneView: UIViewRepresentable {
             context.coordinator.startDisplayLink()
             
             // Start AR session first if needed
-            if isAREnabled {
-                print("Starting AR session immediately")
-                renderer.startARSession()
+            print("Starting AR session immediately")
+            renderer.startARSession()
+            
+            // Load model AFTER AR session starts and MTKView is set up
+            Task {
+                // Wait for AR session to initialize properly
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
                 
-                // Load model AFTER AR session starts and MTKView is set up
-                Task {
-                    // Wait for AR session to initialize properly
-                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-                    
-                    // Additional check: ensure MTKView has proper bounds before loading
-                    await MainActor.run {
-                        print("🎯 Pre-loading checks:")
-                        print("   MTKView frame: \(metalKitView.frame)")
-                        print("   MTKView bounds: \(metalKitView.bounds)")
-                        print("   MTKView window: \(metalKitView.window != nil)")
-                        print("   AR session running: \(renderer.isARSessionRunning)")
-                    }
-                    
-                    if metalKitView.bounds.width > 0 && metalKitView.bounds.height > 0 {
-                        print("✅ MTKView ready, loading model...")
-                        await loadModel(renderer: renderer, coordinator: context.coordinator)
-                    } else {
-                        print("⚠️  MTKView not ready yet, delaying model load...")
-                        try await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1 more second
-                        await loadModel(renderer: renderer, coordinator: context.coordinator)
-                    }
+                // Additional check: ensure MTKView has proper bounds before loading
+                await MainActor.run {
+                    print("🎯 Pre-loading checks:")
+                    print("   MTKView frame: \(metalKitView.frame)")
+                    print("   MTKView bounds: \(metalKitView.bounds)")
+                    print("   MTKView window: \(metalKitView.window != nil)")
+                    print("   AR session running: \(renderer.isARSessionRunning)")
                 }
-            } else {
-                print("AR not enabled, loading model immediately")
-                Task {
+                
+                if metalKitView.bounds.width > 0 && metalKitView.bounds.height > 0 {
+                    print("✅ MTKView ready, loading model...")
+                    await loadModel(renderer: renderer, coordinator: context.coordinator)
+                } else {
+                    print("⚠️  MTKView not ready yet, delaying model load...")
+                    try await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1 more second
                     await loadModel(renderer: renderer, coordinator: context.coordinator)
                 }
             }
@@ -276,20 +267,10 @@ public struct ARSceneView: UIViewRepresentable {
     public func updateUIView(_ view: MTKView, context: UIViewRepresentableContext<ARSceneView>) {
         print("🔄 SwiftUI updateUIView called")
         print("   View frame: \(view.frame)")
-        print("   AR enabled: \(isAREnabled)")
         
         guard let renderer = context.coordinator.renderer else { 
             print("❌ No renderer in updateUIView")
             return 
-        }
-        
-        // Handle AR session state changes
-        if isAREnabled && !renderer.isARSessionRunning {
-            print("🚀 Starting AR session from updateUIView")
-            renderer.startARSession()
-        } else if !isAREnabled && renderer.isARSessionRunning {
-            print("⏸️ Pausing AR session from updateUIView")
-            renderer.pauseARSession()
         }
         
         // Force redraw
@@ -314,22 +295,20 @@ public struct ARSceneView: UIViewRepresentable {
         
         do {
             // Check GPU memory before loading large splat files in AR mode
-            if renderer.isAREnabled {
-                let device = renderer.device
-                print("🔍 GPU Memory check for AR mode:")
-                print("   Device: \(device.name)")
-                print("   Recommended working set: \(device.recommendedMaxWorkingSetSize / 1024 / 1024) MB")
-                print("   Current allocated: \(device.currentAllocatedSize / 1024 / 1024) MB")
-                
-                // Basic memory pressure check
-                let availableMemory = Int(device.recommendedMaxWorkingSetSize) - device.currentAllocatedSize
-                let estimatedSplatMemory: Int64 = 50_000_000 // ~50MB rough estimate for large splats
-                
-                if availableMemory < estimatedSplatMemory {
-                    print("⚠️  WARNING: Low GPU memory for AR + Splats")
-                    print("   Available: \(availableMemory / 1024 / 1024) MB")
-                    print("   Estimated needed: \(estimatedSplatMemory / 1024 / 1024) MB")
-                }
+            let device = renderer.device
+            print("🔍 GPU Memory check for AR mode:")
+            print("   Device: \(device.name)")
+            print("   Recommended working set: \(device.recommendedMaxWorkingSetSize / 1024 / 1024) MB")
+            print("   Current allocated: \(device.currentAllocatedSize / 1024 / 1024) MB")
+            
+            // Basic memory pressure check
+            let availableMemory = Int(device.recommendedMaxWorkingSetSize) - device.currentAllocatedSize
+            let estimatedSplatMemory: Int64 = 50_000_000 // ~50MB rough estimate for large splats
+            
+            if availableMemory < estimatedSplatMemory {
+                print("⚠️  WARNING: Low GPU memory for AR + Splats")
+                print("   Available: \(availableMemory / 1024 / 1024) MB")
+                print("   Estimated needed: \(estimatedSplatMemory / 1024 / 1024) MB")
             }
             
             switch modelIdentifier {
@@ -345,14 +324,9 @@ public struct ARSceneView: UIViewRepresentable {
                     print("💥 Splat loading FAILED in AR mode: \(error)")
                     
                     // If we're in AR mode and splat loading fails, continue without splats
-                    if renderer.isAREnabled {
-                        print("🔄 Continuing AR mode without splats due to loading failure")
-                        print("   AR camera feed should still work")
-                        // Don't rethrow - let AR mode continue without splats
-                    } else {
-                        // In non-AR mode, propagate the error
-                        throw error
-                    }
+                    print("🔄 Continuing AR mode without splats due to loading failure")
+                    print("   AR camera feed should still work")
+                    // Don't rethrow - let AR mode continue without splats
                 }
                 
             case .sampleBox:
@@ -494,11 +468,9 @@ class ARSceneViewDelegate: NSObject, MTKViewDelegate {
 // Stub for non-iOS platforms
 public struct ARSceneView: View {
     public var modelIdentifier: ARModelIdentifier?
-    @Binding public var isAREnabled: Bool
     
-    public init(modelIdentifier: ARModelIdentifier?, isAREnabled: Binding<Bool>) {
+    public init(modelIdentifier: ARModelIdentifier?) {
         self.modelIdentifier = modelIdentifier
-        self._isAREnabled = isAREnabled
     }
     
     public var body: some View {

@@ -5,7 +5,6 @@ import MetalSplatter
 
 struct ContentView: View {
     @State private var isPickingFile = false
-    @State private var isARModeEnabled = true
 
 #if os(macOS)
     @Environment(\.openWindow) private var openWindow
@@ -44,22 +43,8 @@ struct ContentView: View {
                 .navigationDestination(for: ModelIdentifier.self) { modelIdentifier in
                     VStack {
                         #if os(iOS)
-                        HStack {
-                            Text("AR Mode")
-                            Toggle("", isOn: $isARModeEnabled)
-                                .labelsHidden()
-                        }
-                        .padding()
-                        #endif
-                        
-                        #if os(iOS)
-                        if isARModeEnabled {
-                            ARSceneView(modelIdentifier: ARModelIdentifier(from: modelIdentifier), isAREnabled: $isARModeEnabled)
-                                .navigationTitle(modelIdentifier.description + " (AR)")
-                        } else {
-                            MetalKitSceneView(modelIdentifier: modelIdentifier)
-                                .navigationTitle(modelIdentifier.description)
-                        }
+                        ARSceneView(modelIdentifier: ARModelIdentifier(from: modelIdentifier))
+                            .navigationTitle("")
                         #else
                         MetalKitSceneView(modelIdentifier: modelIdentifier)
                             .navigationTitle(modelIdentifier.description)
