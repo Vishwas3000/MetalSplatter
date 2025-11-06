@@ -22,13 +22,47 @@ vertex ARCameraVertexOut arCameraVertexShader(const device ARCameraVertexIn* ver
     ARCameraVertexIn vert = vertices[vid];
     
     // Position camera background at far depth so splats render in front
-    out.position = float4(vert.position, 1.0, 1.0);  // z = 1.0 (far plane)
+    out.position = float4(vert.position, 1.0, 1.0);  // z = 1.0, w = 1.0 (far plane)
     
-    // For debugging, let's use texture coordinates directly without transform first
-    // TODO: Apply display transform properly once basic rendering works
-    out.texCoord = vert.texCoord;
+    // Apply display transform to handle device orientation
+    float3 transformedTexCoord = transform.displayTransform * float3(vert.texCoord, 1.0);
+    out.texCoord = transformedTexCoord.xy;
     
     return out;
+}
+
+// Apple's full-range YCbCr to RGB conversion matrix (ITU-T T.871 specification)
+constant float4x4 ycbcrToRGBTransform = float4x4(
+    float4(+1.0000f, +1.0000f, +1.0000f, +0.0000f),
+    float4(+0.0000f, -0.3441f, +1.7720f, +0.0000f), 
+    float4(+1.4020f, -0.7141f, +0.0000f, +0.0000f),
+    float4(-0.7010f, +0.5291f, -0.8860f, +1.0000f)
+);
+
+// sRGB to linear conversion function
+float srgbToLinear(float color) {
+    if (color <= 0.04045) {
+        return color / 12.92;
+    } else {
+        return pow((color + 0.055) / 1.055, 2.4);
+    }
+}
+
+// Linear to sRGB conversion function  
+float linearToSrgb(float color) {
+    if (color <= 0.0031308) {
+        return color * 12.92;
+    } else {
+        return 1.055 * pow(color, 1.0/2.4) - 0.055;
+    }
+}
+
+float3 srgbToLinear(float3 color) {
+    return float3(srgbToLinear(color.r), srgbToLinear(color.g), srgbToLinear(color.b));
+}
+
+float3 linearToSrgb(float3 color) {
+    return float3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
 }
 
 fragment float4 arCameraFragmentShader(ARCameraVertexOut in [[stage_in]],
@@ -38,39 +72,47 @@ fragment float4 arCameraFragmentShader(ARCameraVertexOut in [[stage_in]],
                                      min_filter::linear,
                                      address::clamp_to_edge);
     
-    // Check bounds to prevent sampling outside texture
-    if (in.texCoord.x < 0.0 || in.texCoord.x > 1.0 || in.texCoord.y < 0.0 || in.texCoord.y > 1.0) {
-        return float4(1.0, 0.0, 1.0, 1.0);  // Magenta for debugging out-of-bounds
-    }
+    // Use texture coordinates for aspect-fill (crop-to-fill) behavior
+    float2 texCoord = in.texCoord;
     
     // Check if we have YUV textures by checking if UV texture is bound and has valid dimensions
     if (uvTexture.get_width() > 0 && uvTexture.get_height() > 0) {
-        // YUV to RGB conversion for ARKit camera feed (ITU-R BT.709 limited range)
-        float y = yTexture.sample(textureSampler, in.texCoord).r;
-        float2 uv = uvTexture.sample(textureSampler, in.texCoord).rg - float2(0.5, 0.5);
+        // Sample YUV components using transformed coordinates
+        float y = yTexture.sample(textureSampler, texCoord).r;
+        float2 uv = uvTexture.sample(textureSampler, texCoord).rg;
         
-        // Correct BT.709 conversion matrix for limited range YUV
-        float3 rgb;
-        rgb.r = y + 1.5748 * uv.g;                    // Red component
-        rgb.g = y - 0.1873 * uv.r - 0.4681 * uv.g;   // Green component  
-        rgb.b = y + 1.8556 * uv.r;                    // Blue component
+        // Convert YUV to RGB using Apple's official matrix
+        float4 ycbcr = float4(y, uv.r, uv.g, 1.0);
+        float4 rgbResult = ycbcrToRGBTransform * ycbcr;
         
-        // Clamp to valid range
-        rgb = saturate(rgb);
+        // Clamp RGB values to valid range
+        float3 rgb = clamp(rgbResult.rgb, 0.0, 1.0);
         
-        return float4(rgb, 1.0);  // Alpha = 1.0 for opaque camera background
+        // Convert from sRGB to linear for proper color space handling
+        rgb = srgbToLinear(rgb);
+        
+        return float4(rgb, 1.0);
     } else {
-        // Direct RGB/BGRA texture
-        float4 color = yTexture.sample(textureSampler, in.texCoord);
-        return float4(color.rgb, 1.0);  // Ensure alpha = 1.0 for opaque camera background
+        // Direct RGB/BGRA texture (fallback)
+        float4 color = yTexture.sample(textureSampler, texCoord);
+        
+        // Convert to linear color space
+        float3 linearColor = srgbToLinear(color.rgb);
+        
+        return float4(linearColor, 1.0);
     }
 }
 
 fragment float4 arCameraFragmentShaderRGB(ARCameraVertexOut in [[stage_in]],
                                           texture2d<float> rgbTexture [[texture(0)]]) {
     constexpr sampler textureSampler(mag_filter::linear,
-                                     min_filter::linear);
+                                     min_filter::linear,
+                                     address::clamp_to_edge);
     
     float4 color = rgbTexture.sample(textureSampler, in.texCoord);
-    return float4(color.rgb, 1.0);  // Ensure alpha = 1.0 for opaque camera background
+    
+    // Convert from sRGB to linear color space for consistent rendering
+    float3 linearColor = srgbToLinear(color.rgb);
+    
+    return float4(linearColor, 1.0);  // Ensure alpha = 1.0 for opaque camera background
 }

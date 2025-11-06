@@ -51,7 +51,7 @@ public class ARSplatRenderer: NSObject {
     
     // Orientation tracking
     private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
-    private var currentViewportSize: CGSize = CGSize(width: 1, height: 1)
+    private var currentViewportSize: CGSize = CGSize(width: 390, height: 844)  // Reasonable iPhone default
     
     
     public init(device: MTLDevice,
@@ -234,7 +234,6 @@ public class ARSplatRenderer: NSObject {
         
         let hasFrame = arSession.currentFrame != nil
         let frameTimestamp = arSession.currentFrame?.timestamp ?? -1
-        print("=== METAL RENDER called on thread: \(Thread.current)")
         print("=== AR enabled: \(self.isAREnabled), has frame: \(hasFrame), timestamp: \(frameTimestamp)")
         
         Self.log.info("Render called - AR enabled: \(self.isAREnabled), has frame: \(hasFrame), timestamp: \(frameTimestamp)")
@@ -345,9 +344,16 @@ public class ARSplatRenderer: NSObject {
         
         cameraEncoder.label = "AR Camera Background Pass"
         
+        // Use the render target texture size as the viewport - this is the actual view size
+        let renderTargetSize = CGSize(width: colorTexture.width, height: colorTexture.height)
+        
+        // Log for debugging
+        print("🎯 Render target size: \(renderTargetSize)")
+        print("🎯 Stored viewport size: \(getCurrentViewportSize())")
+        
         arCameraRenderer.render(
             frame: frame,
-            viewportSize: getCurrentViewportSize(),
+            viewportSize: renderTargetSize,
             interfaceOrientation: getCurrentInterfaceOrientation(),
             to: cameraEncoder
         )

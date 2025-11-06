@@ -31,12 +31,14 @@ public class ARCameraRenderer {
         let displayTransform: simd_float3x3
     }
     
-    // Full-screen quad with standard texture coordinates
+    // Full-screen quad with 90° clockwise rotated texture coordinates
+    // Standard: (0,0)=top-left, (1,1)=bottom-right
+    // 90° CW:   (0,0)=top-right, (1,1)=bottom-left
     private let quadVertices: [Vertex] = [
-        Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(0, 1)),  // Bottom-left
-        Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(1, 1)),  // Bottom-right  
-        Vertex(position: SIMD2(-1,  1), texCoord: SIMD2(0, 0)),  // Top-left
-        Vertex(position: SIMD2( 1,  1), texCoord: SIMD2(1, 0))   // Top-right
+        Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(1, 1)),  // Bottom-left -> use bottom-right tex
+        Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(1, 0)),  // Bottom-right -> use top-right tex
+        Vertex(position: SIMD2(-1,  1), texCoord: SIMD2(0, 1)),  // Top-left -> use bottom-left tex
+        Vertex(position: SIMD2( 1,  1), texCoord: SIMD2(0, 0))   // Top-right -> use top-left tex
     ]
     
     public init?(device: MTLDevice) {
@@ -129,10 +131,10 @@ public class ARCameraRenderer {
     private func setupDepthState() {
         let depthDescriptor = MTLDepthStencilDescriptor()
         depthDescriptor.depthCompareFunction = .always  // Always render camera background
-        depthDescriptor.isDepthWriteEnabled = true      // Write far depth so splats render in front
+        depthDescriptor.isDepthWriteEnabled = true      // Write max depth so splats render in front
         
         depthStencilState = device.makeDepthStencilState(descriptor: depthDescriptor)
-        Self.log.info("AR camera depth stencil state created - renders to texture without depth")
+        Self.log.info("AR camera depth stencil state created - writes max depth for background")
     }
     
     private func setupTransformBuffer() {
@@ -147,7 +149,13 @@ public class ARCameraRenderer {
         frame: ARFrame,
         to renderEncoder: MTLRenderCommandEncoder
     ) {
-        render(frame: frame, viewportSize: CGSize(width: 1, height: 1), interfaceOrientation: .portrait, to: renderEncoder)
+        // Use camera image size as fallback viewport
+        let capturedImage = frame.capturedImage
+        let cameraWidth = CVPixelBufferGetWidth(capturedImage)
+        let cameraHeight = CVPixelBufferGetHeight(capturedImage)
+        let fallbackViewportSize = CGSize(width: cameraWidth, height: cameraHeight)
+        
+        render(frame: frame, viewportSize: fallbackViewportSize, interfaceOrientation: .portrait, to: renderEncoder)
     }
     
     public func render(
@@ -165,16 +173,28 @@ public class ARCameraRenderer {
             return
         }
         
-        // Calculate display transform based on device orientation and viewport
-        let cgTransform = frame.displayTransform(for: interfaceOrientation, viewportSize: viewportSize)
+        // Validate viewport size
+        guard viewportSize.width > 0.0 && viewportSize.height > 0.0 else {
+//            Self.log.error("Invalid viewport size: \(viewportSize.width)x\(viewportSize.height)")
+            return
+        }
         
-        // Convert CGAffineTransform to simd_float3x3 (column-major)
+        // Get camera image dimensions for aspect ratio calculation
+        let capturedImage = frame.capturedImage
+        let cameraWidth = CVPixelBufferGetWidth(capturedImage)
+        let cameraHeight = CVPixelBufferGetHeight(capturedImage)
+        let cameraAspectRatio = Float(cameraWidth) / Float(cameraHeight)
+        let viewportAspectRatio = Float(viewportSize.width) / Float(viewportSize.height)
+        
+        Self.log.info("Camera: \(cameraWidth)x\(cameraHeight) (aspect: \(cameraAspectRatio)), Viewport: \(viewportSize.width)x\(viewportSize.height) (aspect: \(viewportAspectRatio))")
+        
+        // Use identity matrix since rotation is now baked into quad vertices
         let displayTransform = simd_float3x3(
-            simd_float3(Float(cgTransform.a), Float(cgTransform.b), 0),  // Column 1
-            simd_float3(Float(cgTransform.c), Float(cgTransform.d), 0),  // Column 2
-            simd_float3(Float(cgTransform.tx), Float(cgTransform.ty), 1) // Column 3
+            simd_float3(1.0, 0.0, 0.0),
+            simd_float3(0.0, 1.0, 0.0),
+            simd_float3(0.0, 0.0, 1.0)
         )
-        
+
         let cameraTransform = CameraTransform(displayTransform: displayTransform)
         
         // Update transform buffer
@@ -191,13 +211,14 @@ public class ARCameraRenderer {
             renderEncoder.setDepthStencilState(depthStencilState)
         }
         
-        let capturedImage = frame.capturedImage
         let pixelFormat = CVPixelBufferGetPixelFormatType(capturedImage)
         
         if pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
            pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
+            print("renderYUVFrame")
             renderYUVFrame(capturedImage, renderEncoder: renderEncoder)
         } else {
+            print("renderRGBFrame")
             renderRGBFrame(capturedImage, renderEncoder: renderEncoder)
         }
         

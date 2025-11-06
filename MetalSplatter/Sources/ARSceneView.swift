@@ -450,6 +450,7 @@ class ARSceneViewDelegate: NSObject, MTKViewDelegate {
         print("📐 MTKView drawableSizeWillChange called: \(size)")
         print("   View frame: \(view.frame)")
         print("   View bounds: \(view.bounds)")
+        print("   This is the ACTUAL viewport size for AR camera rendering")
         
         // Detect orientation based on aspect ratio change
         let aspectRatio = size.width / size.height
@@ -479,7 +480,8 @@ class ARSceneViewDelegate: NSObject, MTKViewDelegate {
             print("🔄 Orientation detected via MTKView: \(String(describing: newOrientation)) (aspect: \(String(format: "%.2f", aspectRatio)))")
         }
         
-        // Notify renderer about the orientation change
+        // Notify renderer about the orientation change with the ACTUAL drawable size
+        print("🎯 Updating renderer with drawable size: \(size)")
         renderer.handleOrientationChange(newOrientation, viewportSize: size)
         
         // Trigger a redraw
