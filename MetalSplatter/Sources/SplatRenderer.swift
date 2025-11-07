@@ -651,15 +651,23 @@ extension SplatRenderer.Splat {
         self.init(position: splat.position,
                   color: .init(splat.color.asLinearFloat.sRGBToLinear, splat.opacity.asLinearFloat),
                   scale: splat.scale.asLinearFloat,
-                  rotation: splat.rotation.normalized)
+                  rotation: splat.rotation.normalized,
+                  isSpz: splat.isSpz)
     }
 
     init(position: SIMD3<Float>,
          color: SIMD4<Float>,
          scale: SIMD3<Float>,
-         rotation: simd_quatf) {
+         rotation: simd_quatf,
+         isSpz: Bool) {
         let transform = simd_float3x3(rotation) * simd_float3x3(diagonal: scale)
-        let cov3D = transform * transform.transpose
+        var cov3D = transform * transform.transpose
+        
+        if isSpz {
+            let scaleFactor: Float = 0.01
+            cov3D = cov3D * scaleFactor
+        }
+        
         self.init(position: MTLPackedFloat3Make(position.x, position.y, position.z),
                   color: SplatRenderer.PackedRGBHalf4(r: Float16(color.x), g: Float16(color.y), b: Float16(color.z), a: Float16(color.w)),
                   covA: SplatRenderer.PackedHalf3(x: Float16(cov3D[0, 0]), y: Float16(cov3D[0, 1]), z: Float16(cov3D[0, 2])),

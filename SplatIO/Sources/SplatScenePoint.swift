@@ -151,17 +151,20 @@ public struct SplatScenePoint {
     public var opacity: Opacity
     public var scale: Scale
     public var rotation: simd_quatf
+    public var isSpz: Bool
 
     public init(position: SIMD3<Float>,
                 color: Color,
                 opacity: Opacity,
                 scale: Scale,
-                rotation: simd_quatf) {
+                rotation: simd_quatf,
+                isSpz: Bool = false) {
         self.position = position
         self.color = color
         self.opacity = opacity
         self.scale = scale
         self.rotation = rotation
+        self.isSpz = isSpz
     }
 
     var linearNormalized: SplatScenePoint {
@@ -169,7 +172,8 @@ public struct SplatScenePoint {
                         color: .linearFloat(color.asLinearFloat),
                         opacity: .linearFloat(opacity.asLinearFloat),
                         scale: .linearFloat(scale.asLinearFloat),
-                        rotation: rotation.normalized)
+                        rotation: rotation.normalized,
+                        isSpz: isSpz)
     }
 }
 

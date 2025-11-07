@@ -320,7 +320,7 @@ public class SPZParser {
             let signedZ = Int32(bitPattern: rawZ << 8) >> 8
             
             let x = Float(signedX) / scaleFactor
-            let y = -Float(signedY) / scaleFactor  // Y-flip
+            let y = Float(signedY) / scaleFactor  // Y-flip
             let z = Float(signedZ) / scaleFactor
             
             let position = SIMD3<Float>(x, y, z)
@@ -352,7 +352,7 @@ public class SPZParser {
             let opacity = Float(alphas[i]) / 255.0
             
             // 🔍 DEBUG: Log first 3 splats for validation (reduced logging)
-            if i < 100 {
+            if i < 10 {
                 print("\n🔍 SPZ Splat \(i) Raw Data:")
                 print("   Position: (\(String(format: "%.4f", x)), \(String(format: "%.4f", y)), \(String(format: "%.4f", z)))")
                 print("   Color: (\(String(format: "%.3f", color.x)), \(String(format: "%.3f", color.y)), \(String(format: "%.3f", color.z)))")
@@ -478,7 +478,8 @@ extension SPZParser.SplatData {
             color: .linearFloat(self.color),  // SPZ color is already in 0-1 range
             opacity: .linearFloat(self.opacity),  // SPZ opacity is already in 0-1 range
             scale: .linearFloat(self.scale),  // Use the scale directly
-            rotation: self.rotation  // Use the rotation quaternion directly
+            rotation: self.rotation,  // Use the rotation quaternion directly
+            isSpz: true
         )
     }
 }
