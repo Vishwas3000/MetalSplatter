@@ -215,10 +215,8 @@ public class ARCameraRenderer {
         
         if pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
            pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
-            print("renderYUVFrame")
             renderYUVFrame(capturedImage, renderEncoder: renderEncoder)
         } else {
-            print("renderRGBFrame")
             renderRGBFrame(capturedImage, renderEncoder: renderEncoder)
         }
         

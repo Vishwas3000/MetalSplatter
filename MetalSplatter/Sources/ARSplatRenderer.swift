@@ -351,10 +351,6 @@ public class ARSplatRenderer: NSObject {
         // Use the render target texture size as the viewport - this is the actual view size
         let renderTargetSize = CGSize(width: colorTexture.width, height: colorTexture.height)
         
-        // Log for debugging
-        print("🎯 Render target size: \(renderTargetSize)")
-        print("🎯 Stored viewport size: \(getCurrentViewportSize())")
-        
         arCameraRenderer.render(
             frame: frame,
             viewportSize: renderTargetSize,

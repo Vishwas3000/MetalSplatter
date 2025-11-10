@@ -152,6 +152,12 @@ public struct SplatScenePoint {
     public var scale: Scale
     public var rotation: simd_quatf
 
+    public var covarianceMatrix: simd_float3x3 {
+        let R = simd_float3x3(rotation)
+        let S = simd_float3x3(diagonal: scale.asLinearFloat)
+        return R * S * S.transpose * R.transpose
+    }
+
     public init(position: SIMD3<Float>,
                 color: Color,
                 opacity: Opacity,
