@@ -167,25 +167,31 @@ public class ARCameraRenderer {
         return (simd_float2(1.0, 1.0) - cropScale) * 0.5
     }
     
-    /// Calculates aspect-fill crop scale to eliminate stretching
+    /// Calculates object-fit: cover style scale using actual dimensions (like CSS cover algorithm)
     /// - Parameters:
-    ///   - cameraAspectRatio: Aspect ratio of the camera texture (width/height)
-    ///   - viewportAspectRatio: Aspect ratio of the viewport (width/height)
-    /// - Returns: Crop scale factors for X and Y to achieve aspect-fill behavior
-    private func calculateAspectFillCropScale(cameraAspectRatio: Float, viewportAspectRatio: Float) -> Float {
-        var cropScale: Float = 1.0
+    ///   - cameraWidth: Width of the camera texture in pixels
+    ///   - cameraHeight: Height of the camera texture in pixels
+    ///   - viewportWidth: Width of the viewport in pixels
+    ///   - viewportHeight: Height of the viewport in pixels
+    /// - Returns: Uniform scale factor to achieve cover behavior (fills viewport, crops excess)
+    private func calculateObjectFitCoverScale(cameraWidth: Float, cameraHeight: Float, viewportWidth: Float, viewportHeight: Float) -> Float {
+        // CSS object-fit: cover algorithm
+        // Scale to fill the entire container while maintaining aspect ratio
         
-        if cameraAspectRatio > viewportAspectRatio {
-            // Camera is wider than viewport - crop horizontally (sides)
-            // Scale down X to fit viewport aspect ratio
-            cropScale = viewportAspectRatio / cameraAspectRatio
+        let cameraAspectRatio = cameraWidth / cameraHeight
+        let viewportAspectRatio = viewportWidth / viewportHeight
+        
+        // Determine which dimension constrains the scaling
+        // Cover means we scale by the dimension that makes the content FILL the container
+        if cameraAspectRatio < viewportAspectRatio {
+            // Camera is taller relative to viewport
+            // Scale by width to fill viewport width, crop top/bottom
+            return viewportWidth / cameraWidth
         } else {
-            // Camera is taller than viewport - crop vertically (top/bottom)
-            // Scale down Y to fit viewport aspect ratio  
-            cropScale = cameraAspectRatio / viewportAspectRatio
+            // Camera is wider relative to viewport  
+            // Scale by height to fill viewport height, crop left/right
+            return viewportHeight / cameraHeight
         }
-        
-        return cropScale
     }
     
     public func render(
@@ -231,18 +237,19 @@ public class ARCameraRenderer {
             simd_float3(Float(cgDisplayTransform.tx), Float(cgDisplayTransform.ty), 1)
         )
         
-        // Calculate aspect-fill crop scale to eliminate stretching
-//        let aspectFillScale = calculateAspectFillCropScale(
-//            cameraAspectRatio: cameraAspectRatio, 
-//            viewportAspectRatio: viewportAspectRatio
-//        )
-        let aspectFillScale: Float = 1.0
+        // Calculate CSS object-fit: cover style scaling using actual dimensions
+        let objectFitCoverScale = calculateObjectFitCoverScale(
+            cameraWidth: Float(cameraWidth), 
+            cameraHeight: Float(cameraHeight),
+            viewportWidth: Float(viewportSize.width),
+            viewportHeight: Float(viewportSize.height)
+        )
         
-        // Apply same scale to both X and Y to maintain camera feed aspect ratio
-        let cropScale = simd_float2(aspectFillScale, aspectFillScale)
+        // Use inverse scale for texture cropping (scale > 1.0 means zoom in, crop more)
+        let cropScale = simd_float2(1.0/objectFitCoverScale, 1.0/objectFitCoverScale)
         let cropOffset = calculateCenterOffset(for: cropScale)
         
-        print("🎯 ASPECT-FILL CROP: scale=\(aspectFillScale), cropScale=\(cropScale), offset=\(cropOffset)")
+        print("🎯 OBJECT-FIT COVER: scale=\(objectFitCoverScale), cropScale=\(cropScale), offset=\(cropOffset)")
 
         let cameraTransform = CameraTransform(
             displayTransform: displayTransform,

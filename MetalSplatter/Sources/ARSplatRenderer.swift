@@ -44,6 +44,7 @@ public class ARSplatRenderer: NSObject {
     public var splatRotation: simd_quatf = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
     public var fixGravityFlip: Bool = true  // Apply 180° X-axis rotation to fix gravity orientation
     
+    
     // Zoom configuration
     private let minScale: Float = 0.01     // Minimum zoom (very small)
     private let maxScale: Float = 4.0      // Maximum zoom (2x original size)
@@ -410,7 +411,7 @@ public class ARSplatRenderer: NSObject {
         
         // Position splats at screen center, in front of camera
         // Z = -0.5 means 0.5 meters in front of the camera
-        let centerPosition = SIMD3<Float>(0, 0, -0.5)  // Screen center, 0.5m in front
+        let centerPosition = SIMD3<Float>(0, 0, -2.0)  // Screen center, 0.5m in front
         let translationMatrix = matrix4x4_translation(centerPosition.x, centerPosition.y, centerPosition.z)
         
         // Fix gravity flip by rotating 180° around X-axis to flip Y-axis
@@ -480,6 +481,7 @@ public class ARSplatRenderer: NSObject {
         splatScale = newScale
         Self.log.info("Set zoom level to \(clampedLevel * 100)% (scale: \(self.splatScale))")
     }
+    
     
     /// Check if can zoom in further
     public var canZoomIn: Bool {
