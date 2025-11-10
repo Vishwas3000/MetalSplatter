@@ -158,6 +158,36 @@ public class ARCameraRenderer {
         render(frame: frame, viewportSize: fallbackViewportSize, interfaceOrientation: .portrait, to: renderEncoder)
     }
     
+    /// Calculates centered texture offset for a given crop scale
+    /// - Parameter cropScale: The scale factor for texture coordinates (e.g., 1.5 for 150% zoom)
+    /// - Returns: Offset to center the cropped texture area
+    private func calculateCenterOffset(for cropScale: simd_float2) -> simd_float2 {
+        // Formula: offset = (1.0 - scale) * 0.5
+        // This centers the scaled texture coordinates within [0,1] bounds
+        return (simd_float2(1.0, 1.0) - cropScale) * 0.5
+    }
+    
+    /// Calculates aspect-fill crop scale to eliminate stretching
+    /// - Parameters:
+    ///   - cameraAspectRatio: Aspect ratio of the camera texture (width/height)
+    ///   - viewportAspectRatio: Aspect ratio of the viewport (width/height)
+    /// - Returns: Crop scale factors for X and Y to achieve aspect-fill behavior
+    private func calculateAspectFillCropScale(cameraAspectRatio: Float, viewportAspectRatio: Float) -> Float {
+        var cropScale: Float = 1.0
+        
+        if cameraAspectRatio > viewportAspectRatio {
+            // Camera is wider than viewport - crop horizontally (sides)
+            // Scale down X to fit viewport aspect ratio
+            cropScale = viewportAspectRatio / cameraAspectRatio
+        } else {
+            // Camera is taller than viewport - crop vertically (top/bottom)
+            // Scale down Y to fit viewport aspect ratio  
+            cropScale = cameraAspectRatio / viewportAspectRatio
+        }
+        
+        return cropScale
+    }
+    
     public func render(
         frame: ARFrame,
         viewportSize: CGSize,
@@ -188,19 +218,37 @@ public class ARCameraRenderer {
         
         Self.log.info("Camera: \(cameraWidth)x\(cameraHeight) (aspect: \(cameraAspectRatio)), Viewport: \(viewportSize.width)x\(viewportSize.height) (aspect: \(viewportAspectRatio))")
         
-        // Use ARKit's displayTransform for proper orientation and aspect ratio handling
+        print("🎯 REVERTING TO SIMPLE ARKIT DISPLAYTRANSFORM - FIXING BLEEDING LINES")
+        
+        // REVERT: Use ARKit's full displayTransform to fix bleeding lines issue
+        // The bleeding was caused by our manual cropping going outside texture bounds
         let cgDisplayTransform = frame.displayTransform(for: interfaceOrientation, viewportSize: viewportSize)
         
-        // Convert CGAffineTransform to simd_float3x3
+        // Convert full CGAffineTransform to simd_float3x3 (includes ARKit's scaling + orientation)
         let displayTransform = simd_float3x3(
             simd_float3(Float(cgDisplayTransform.a), Float(cgDisplayTransform.b), 0),
             simd_float3(Float(cgDisplayTransform.c), Float(cgDisplayTransform.d), 0), 
             simd_float3(Float(cgDisplayTransform.tx), Float(cgDisplayTransform.ty), 1)
         )
         
-        print("🎯 ARKit displayTransform: a=\(cgDisplayTransform.a), b=\(cgDisplayTransform.b), c=\(cgDisplayTransform.c), d=\(cgDisplayTransform.d), tx=\(cgDisplayTransform.tx), ty=\(cgDisplayTransform.ty)")
+        // Calculate aspect-fill crop scale to eliminate stretching
+//        let aspectFillScale = calculateAspectFillCropScale(
+//            cameraAspectRatio: cameraAspectRatio, 
+//            viewportAspectRatio: viewportAspectRatio
+//        )
+        let aspectFillScale: Float = 1.0
+        
+        // Apply same scale to both X and Y to maintain camera feed aspect ratio
+        let cropScale = simd_float2(aspectFillScale, aspectFillScale)
+        let cropOffset = calculateCenterOffset(for: cropScale)
+        
+        print("🎯 ASPECT-FILL CROP: scale=\(aspectFillScale), cropScale=\(cropScale), offset=\(cropOffset)")
 
-        let cameraTransform = CameraTransform(displayTransform: displayTransform)
+        let cameraTransform = CameraTransform(
+            displayTransform: displayTransform,
+            cropScale: cropScale,
+            cropOffset: cropOffset
+        )
         
         // Update transform buffer
         let transformPointer = transformBuffer.contents().bindMemory(to: CameraTransform.self, capacity: 1)
