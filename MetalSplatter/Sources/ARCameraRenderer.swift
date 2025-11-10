@@ -29,16 +29,16 @@ public class ARCameraRenderer {
     
     private struct CameraTransform {
         let displayTransform: simd_float3x3
+        let cropScale: simd_float2
+        let cropOffset: simd_float2
     }
     
-    // Full-screen quad with 90° clockwise rotated texture coordinates
-    // Standard: (0,0)=top-left, (1,1)=bottom-right
-    // 90° CW:   (0,0)=top-right, (1,1)=bottom-left
+    // Standard full-screen quad with normalized texture coordinates
     private let quadVertices: [Vertex] = [
-        Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(1, 1)),  // Bottom-left -> use bottom-right tex
-        Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(1, 0)),  // Bottom-right -> use top-right tex
-        Vertex(position: SIMD2(-1,  1), texCoord: SIMD2(0, 1)),  // Top-left -> use bottom-left tex
-        Vertex(position: SIMD2( 1,  1), texCoord: SIMD2(0, 0))   // Top-right -> use top-left tex
+        Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(1, 0)),  // Bottom-left
+        Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(0, 0)),  // Bottom-right
+        Vertex(position: SIMD2(-1,  1), texCoord: SIMD2(1, 1)),  // Top-left
+        Vertex(position: SIMD2( 1,  1), texCoord: SIMD2(0, 1))   // Top-right
     ]
     
     public init?(device: MTLDevice) {
@@ -188,12 +188,17 @@ public class ARCameraRenderer {
         
         Self.log.info("Camera: \(cameraWidth)x\(cameraHeight) (aspect: \(cameraAspectRatio)), Viewport: \(viewportSize.width)x\(viewportSize.height) (aspect: \(viewportAspectRatio))")
         
-        // Use identity matrix since rotation is now baked into quad vertices
+        // Use ARKit's displayTransform for proper orientation and aspect ratio handling
+        let cgDisplayTransform = frame.displayTransform(for: interfaceOrientation, viewportSize: viewportSize)
+        
+        // Convert CGAffineTransform to simd_float3x3
         let displayTransform = simd_float3x3(
-            simd_float3(1.0, 0.0, 0.0),
-            simd_float3(0.0, 1.0, 0.0),
-            simd_float3(0.0, 0.0, 1.0)
+            simd_float3(Float(cgDisplayTransform.a), Float(cgDisplayTransform.b), 0),
+            simd_float3(Float(cgDisplayTransform.c), Float(cgDisplayTransform.d), 0), 
+            simd_float3(Float(cgDisplayTransform.tx), Float(cgDisplayTransform.ty), 1)
         )
+        
+        print("🎯 ARKit displayTransform: a=\(cgDisplayTransform.a), b=\(cgDisplayTransform.b), c=\(cgDisplayTransform.c), d=\(cgDisplayTransform.d), tx=\(cgDisplayTransform.tx), ty=\(cgDisplayTransform.ty)")
 
         let cameraTransform = CameraTransform(displayTransform: displayTransform)
         
