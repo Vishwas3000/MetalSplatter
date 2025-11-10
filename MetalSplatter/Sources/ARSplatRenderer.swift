@@ -128,12 +128,14 @@ public class ARSplatRenderer: NSObject {
         }
         
         let configuration = ARWorldTrackingConfiguration()
-        configuration.planeDetection = [.horizontal, .vertical]
-        configuration.environmentTexturing = .automatic
+        // Only enable features we actually use to avoid unused texture warnings
+        configuration.planeDetection = []  // Disable if not using plane detection
+        configuration.environmentTexturing = .none  // Disable if not using environment lighting
         
-        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
-            configuration.sceneReconstruction = .mesh
-        }
+        // Disable scene reconstruction to prevent unused semantics/confidence textures
+        // if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+        //     configuration.sceneReconstruction = .mesh
+        // }
         
         Self.log.info("Starting AR session with configuration")
         print("Starting AR session on thread: \(Thread.current)")
