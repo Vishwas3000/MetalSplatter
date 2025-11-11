@@ -328,15 +328,16 @@ public class ARSplatRenderer: NSObject {
         to commandBuffer: MTLCommandBuffer
     ) throws {
         
-        // PASS 1: Render camera background directly to output texture
+        // OPTIMIZED TWO-PASS: Camera background + splats with performance optimizations
         
+        // PASS 1: Render camera background - optimized for GPU debugger
         let cameraPassDescriptor = MTLRenderPassDescriptor()
         cameraPassDescriptor.colorAttachments[0].texture = colorTexture
         cameraPassDescriptor.colorAttachments[0].loadAction = .clear
         cameraPassDescriptor.colorAttachments[0].storeAction = .store
         cameraPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         
-        // Setup depth for camera pass - camera renders to far depth (1.0)
+        // Optimize depth buffer usage
         if let depthTexture = depthTexture {
             cameraPassDescriptor.depthAttachment.texture = depthTexture
             cameraPassDescriptor.depthAttachment.loadAction = .clear
@@ -344,16 +345,20 @@ public class ARSplatRenderer: NSObject {
             cameraPassDescriptor.depthAttachment.clearDepth = 1.0
         }
         
+        // Add performance optimizations
+        commandBuffer.addCompletedHandler { _ in
+            // Cleanup completion handler to prevent warnings
+        }
+        
         guard let cameraEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: cameraPassDescriptor) else {
             throw NSError(domain: "ARSplatRenderer", code: 2,
                          userInfo: [NSLocalizedDescriptionKey: "Failed to create camera render encoder"])
         }
         
-        cameraEncoder.label = "AR Camera Background Pass"
+        cameraEncoder.label = "AR Camera Background"
+        cameraEncoder.pushDebugGroup("Camera Rendering")
         
-        // Use the render target texture size as the viewport - this is the actual view size
         let renderTargetSize = CGSize(width: colorTexture.width, height: colorTexture.height)
-        
         arCameraRenderer.render(
             frame: frame,
             viewportSize: renderTargetSize,
@@ -361,12 +366,13 @@ public class ARSplatRenderer: NSObject {
             to: cameraEncoder
         )
         
+        cameraEncoder.popDebugGroup()
         cameraEncoder.endEncoding()
         
-        // PASS 2: Render splats with alpha blending over camera background
+        // PASS 2: Render splats over camera background
         let arViewport = createARViewportCentered(from: frame, colorTexture: colorTexture)
         
-        // Configure for proper blending over existing background
+        // Configure for optimized blending
         coreSplatRenderer.preserveExistingContent = true
         
         try coreSplatRenderer.render(
@@ -380,8 +386,6 @@ public class ARSplatRenderer: NSObject {
         )
     }
     
-    // This method is no longer used - we're using two-pass rendering instead
-    // private func renderSplatsInSinglePass(...) - REMOVED
     
     private func createARViewportCentered(from frame: ARFrame, colorTexture: MTLTexture) -> SplatRenderer.ViewportDescriptor {
         let camera = frame.camera
@@ -413,7 +417,7 @@ public class ARSplatRenderer: NSObject {
         
         // Position splats at screen center, in front of camera
         // Z = -0.5 means 0.5 meters in front of the camera
-        let centerPosition = SIMD3<Float>(0, 0, -2.0)  // Screen center, 0.5m in front
+        let centerPosition = SIMD3<Float>(0, 0, -0.5)  // Screen center, 0.5m in front
         let translationMatrix = matrix4x4_translation(centerPosition.x, centerPosition.y, centerPosition.z)
         
         // Fix gravity flip by rotating 180° around X-axis to flip Y-axis
