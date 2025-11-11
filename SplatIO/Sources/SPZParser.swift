@@ -370,7 +370,7 @@ public class SPZParser {
                 depth: 0
             )
             
-            splats.append(splat)
+            splats.append(splat)  // ✅ Append parsed splat
         }
         
         // 📊 VALIDATION: Analyze parsed data ranges for quality check
@@ -425,6 +425,8 @@ public class SPZParser {
     // MARK: - Rotation Parsing
     
     private static func parseRotation(data: Data, offset: Int, version: UInt32) -> simd_quatf {
+        var rotation: simd_quatf
+        
         if version == 3 {
             // Version 3: Compressed quaternion
             let rotData = UInt32(data[offset]) |
@@ -449,7 +451,7 @@ public class SPZParser {
             let sumSq = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]
             q[largestIdx] = sqrt(max(0.0, 1.0 - sumSq))
             
-            return simd_quatf(ix: q[0], iy: q[1], iz: q[2], r: q[3])
+            rotation = simd_quatf(ix: q[0], iy: q[1], iz: q[2], r: q[3])
             
         } else {
             // Version 2: Simple format
@@ -460,10 +462,11 @@ public class SPZParser {
             let wSq = 1.0 - (x * x + y * y + z * z)
             let w = sqrt(max(0.0, wSq))
             
-            return simd_quatf(ix: x, iy: y, iz: z, r: w)
+            rotation = simd_quatf(ix: x, iy: y, iz: z, r: w)
         }
+        //normalized the quaternion
+        return rotation.normalized
     }
-    
     private static func clamp(_ value: Float, _ min: Float, _ max: Float) -> Float {
         return Swift.max(min, Swift.min(max, value))
     }
@@ -473,12 +476,19 @@ public class SPZParser {
 
 extension SPZParser.SplatData {
     public func toSplatScenePoint() -> SplatScenePoint {
+        let testRotation = simd_quatf(angle: 0, axis: SIMD3<Float>(0, 1, 0))  // Identity
+        
+//        let avgScale = (self.scale.x + self.scale.y + self.scale.z) / 3.0
+        let geometricMean = pow(self.scale.x * self.scale.y * self.scale.z, 1.0/3.0)
+        let uniformScale = SIMD3<Float>(geometricMean, geometricMean, geometricMean)
+        
+
         return SplatScenePoint(
             position: self.position,
             color: .linearFloat(self.color),  // SPZ color is already in 0-1 range
             opacity: .linearFloat(self.opacity),  // SPZ opacity is already in 0-1 range
-            scale: .linearFloat(self.scale),  // Use the scale directly
-            rotation: self.rotation,  // Use the rotation quaternion directly
+            scale: .linearFloat(uniformScale),  // Use the scale directly
+            rotation: rotation,  // Use the rotation quaternion directly
             isSpz: true
         )
     }
