@@ -298,12 +298,7 @@ public class ARSplatRenderer: NSObject {
         renderPassDescriptor.colorAttachments[0].storeAction = colorStoreAction
         renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1.0)
         
-        if let depthTexture = depthTexture {
-            renderPassDescriptor.depthAttachment.texture = depthTexture
-            renderPassDescriptor.depthAttachment.loadAction = .clear
-            renderPassDescriptor.depthAttachment.storeAction = .store
-            renderPassDescriptor.depthAttachment.clearDepth = 1.0
-        }
+        // No depth buffer for single-stage AR pipeline
         
         renderPassDescriptor.rasterizationRateMap = rasterizationRateMap
         renderPassDescriptor.renderTargetArrayLength = renderTargetArrayLength
@@ -337,13 +332,7 @@ public class ARSplatRenderer: NSObject {
         cameraPassDescriptor.colorAttachments[0].storeAction = .store
         cameraPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         
-        // Optimize depth buffer usage
-        if let depthTexture = depthTexture {
-            cameraPassDescriptor.depthAttachment.texture = depthTexture
-            cameraPassDescriptor.depthAttachment.loadAction = .clear
-            cameraPassDescriptor.depthAttachment.storeAction = .store
-            cameraPassDescriptor.depthAttachment.clearDepth = 1.0
-        }
+        // No depth buffer used for single-stage AR pipeline
         
         // Add performance optimizations
         commandBuffer.addCompletedHandler { _ in
@@ -379,7 +368,7 @@ public class ARSplatRenderer: NSObject {
             viewports: [arViewport],
             colorTexture: colorTexture,
             colorStoreAction: colorStoreAction,
-            depthTexture: depthTexture,
+            depthTexture: nil,  // No depth buffer for AR
             rasterizationRateMap: rasterizationRateMap,
             renderTargetArrayLength: renderTargetArrayLength,
             to: commandBuffer

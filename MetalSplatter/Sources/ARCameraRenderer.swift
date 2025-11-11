@@ -19,7 +19,6 @@ public class ARCameraRenderer {
     private var pipelineState: MTLRenderPipelineState?
     private var vertexBuffer: MTLBuffer?
     private var textureCache: CVMetalTextureCache!
-    private var depthStencilState: MTLDepthStencilState?
     private var transformBuffer: MTLBuffer?
     
     private struct Vertex {
@@ -65,7 +64,6 @@ public class ARCameraRenderer {
         
         setupPipelineState()
         setupVertexBuffer()
-        setupDepthState()
         setupTransformBuffer()
         
         if pipelineState == nil {
@@ -103,13 +101,7 @@ public class ARCameraRenderer {
         pipelineDescriptor.fragmentFunction = fragmentFunction
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm_srgb
         pipelineDescriptor.colorAttachments[0].isBlendingEnabled = false
-        
-        // Set depth format to match framebuffer for direct rendering
-        pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
-        
-        print("Pipeline descriptor configured:")
-        print("   Color format: \(pipelineDescriptor.colorAttachments[0].pixelFormat)")
-        print("   Depth format: \(pipelineDescriptor.depthAttachmentPixelFormat)")
+        pipelineDescriptor.depthAttachmentPixelFormat = .invalid  // No depth buffer
         
         do {
             pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
@@ -128,14 +120,6 @@ public class ARCameraRenderer {
         vertexBuffer?.label = "AR Camera Quad Vertices"
     }
     
-    private func setupDepthState() {
-        let depthDescriptor = MTLDepthStencilDescriptor()
-        depthDescriptor.depthCompareFunction = .always  // Always render camera background
-        depthDescriptor.isDepthWriteEnabled = true      // Write max depth so splats render in front
-        
-        depthStencilState = device.makeDepthStencilState(descriptor: depthDescriptor)
-        Self.log.info("AR camera depth stencil state created - writes max depth for background")
-    }
     
     private func setupTransformBuffer() {
         transformBuffer = device.makeBuffer(
@@ -205,7 +189,7 @@ public class ARCameraRenderer {
         guard let pipelineState = pipelineState,
               let vertexBuffer = vertexBuffer,
               let transformBuffer = transformBuffer else {
-            Self.log.error("AR camera renderer not properly initialized - pipelineState: \(self.pipelineState != nil), vertexBuffer: \(self.vertexBuffer != nil), transformBuffer: \(self.transformBuffer != nil)")
+            Self.log.error("AR camera renderer not properly initialized")
             return
         }
         
@@ -266,10 +250,6 @@ public class ARCameraRenderer {
         renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(transformBuffer, offset: 0, index: 1)
         
-        // Set depth stencil state for proper depth writing
-        if let depthStencilState = depthStencilState {
-            renderEncoder.setDepthStencilState(depthStencilState)
-        }
         
         let pixelFormat = CVPixelBufferGetPixelFormatType(capturedImage)
         
