@@ -121,3 +121,7 @@ struct ContentView: View {
         }
     }
 }
+
+#if os(iOS)
+// Camera scale UI removed - using automatic object-fit: cover algorithm
+#endif

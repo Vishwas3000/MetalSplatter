@@ -57,6 +57,9 @@ public class DotSplatSceneReader: SplatSceneReader {
                 DotSplatEncodedPoint(bufferPointer, from: $0 * DotSplatEncodedPoint.byteWidth, bigEndian: false)
                     .splatScenePoint
             }
+            for (i, splat) in splatPoints.prefix(5).enumerated() {
+                print("Splat \(i) covariance matrix: \(splat.covarianceMatrix)")
+            }
             delegate.didRead(points: splatPoints)
 
             let usedBytesInBuffer = encodedPointCount * DotSplatEncodedPoint.byteWidth

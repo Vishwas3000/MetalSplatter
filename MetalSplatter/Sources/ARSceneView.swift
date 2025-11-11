@@ -157,7 +157,8 @@ public struct ARSceneView: UIViewRepresentable {
             metalKitView.device = metalDevice
             metalKitView.delegate = delegate  // SET DELEGATE EARLY
             metalKitView.colorPixelFormat = MTLPixelFormat.bgra8Unorm_srgb
-            metalKitView.depthStencilPixelFormat = MTLPixelFormat.depth32Float
+            // No depth buffer for single-stage AR pipeline
+            metalKitView.depthStencilPixelFormat = .invalid
             metalKitView.sampleCount = 1
             metalKitView.clearColor = MTLClearColor(red: 0.1, green: 0.5, blue: 0, alpha: 0.5)
             metalKitView.backgroundColor = .cyan

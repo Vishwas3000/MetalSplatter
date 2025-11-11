@@ -8,6 +8,8 @@ struct ARCameraVertexIn {
 
 struct CameraTransform {
     float3x3 displayTransform;
+    float2 cropScale;
+    float2 cropOffset;
 };
 
 struct ARCameraVertexOut {
@@ -24,8 +26,11 @@ vertex ARCameraVertexOut arCameraVertexShader(const device ARCameraVertexIn* ver
     // Position camera background at far depth so splats render in front
     out.position = float4(vert.position, 1.0, 1.0);  // z = 1.0, w = 1.0 (far plane)
     
-    // Apply display transform to handle device orientation
-    float3 transformedTexCoord = transform.displayTransform * float3(vert.texCoord, 1.0);
+    // Apply center crop first to eliminate edge stretching
+    float2 croppedTexCoord = vert.texCoord * transform.cropScale + transform.cropOffset;
+    
+    // Then apply orientation transform
+    float3 transformedTexCoord = transform.displayTransform * float3(croppedTexCoord, 1.0);
     out.texCoord = transformedTexCoord.xy;
     
     return out;

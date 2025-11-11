@@ -19,7 +19,6 @@ public class ARCameraRenderer {
     private var pipelineState: MTLRenderPipelineState?
     private var vertexBuffer: MTLBuffer?
     private var textureCache: CVMetalTextureCache!
-    private var depthStencilState: MTLDepthStencilState?
     private var transformBuffer: MTLBuffer?
     
     private struct Vertex {
@@ -29,16 +28,16 @@ public class ARCameraRenderer {
     
     private struct CameraTransform {
         let displayTransform: simd_float3x3
+        let cropScale: simd_float2
+        let cropOffset: simd_float2
     }
     
-    // Full-screen quad with 90° clockwise rotated texture coordinates
-    // Standard: (0,0)=top-left, (1,1)=bottom-right
-    // 90° CW:   (0,0)=top-right, (1,1)=bottom-left
+    // Standard full-screen quad with normalized texture coordinates
     private let quadVertices: [Vertex] = [
-        Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(1, 1)),  // Bottom-left -> use bottom-right tex
-        Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(1, 0)),  // Bottom-right -> use top-right tex
-        Vertex(position: SIMD2(-1,  1), texCoord: SIMD2(0, 1)),  // Top-left -> use bottom-left tex
-        Vertex(position: SIMD2( 1,  1), texCoord: SIMD2(0, 0))   // Top-right -> use top-left tex
+        Vertex(position: SIMD2(-1, -1), texCoord: SIMD2(1, 0)),  // Bottom-left
+        Vertex(position: SIMD2( 1, -1), texCoord: SIMD2(0, 0)),  // Bottom-right
+        Vertex(position: SIMD2(-1,  1), texCoord: SIMD2(1, 1)),  // Top-left
+        Vertex(position: SIMD2( 1,  1), texCoord: SIMD2(0, 1))   // Top-right
     ]
     
     public init?(device: MTLDevice) {
@@ -65,7 +64,6 @@ public class ARCameraRenderer {
         
         setupPipelineState()
         setupVertexBuffer()
-        setupDepthState()
         setupTransformBuffer()
         
         if pipelineState == nil {
@@ -103,13 +101,7 @@ public class ARCameraRenderer {
         pipelineDescriptor.fragmentFunction = fragmentFunction
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm_srgb
         pipelineDescriptor.colorAttachments[0].isBlendingEnabled = false
-        
-        // Set depth format to match framebuffer for direct rendering
-        pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
-        
-        print("Pipeline descriptor configured:")
-        print("   Color format: \(pipelineDescriptor.colorAttachments[0].pixelFormat)")
-        print("   Depth format: \(pipelineDescriptor.depthAttachmentPixelFormat)")
+        pipelineDescriptor.depthAttachmentPixelFormat = .invalid  // No depth buffer
         
         do {
             pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
@@ -128,14 +120,6 @@ public class ARCameraRenderer {
         vertexBuffer?.label = "AR Camera Quad Vertices"
     }
     
-    private func setupDepthState() {
-        let depthDescriptor = MTLDepthStencilDescriptor()
-        depthDescriptor.depthCompareFunction = .always  // Always render camera background
-        depthDescriptor.isDepthWriteEnabled = true      // Write max depth so splats render in front
-        
-        depthStencilState = device.makeDepthStencilState(descriptor: depthDescriptor)
-        Self.log.info("AR camera depth stencil state created - writes max depth for background")
-    }
     
     private func setupTransformBuffer() {
         transformBuffer = device.makeBuffer(
@@ -158,6 +142,42 @@ public class ARCameraRenderer {
         render(frame: frame, viewportSize: fallbackViewportSize, interfaceOrientation: .portrait, to: renderEncoder)
     }
     
+    /// Calculates centered texture offset for a given crop scale
+    /// - Parameter cropScale: The scale factor for texture coordinates (e.g., 1.5 for 150% zoom)
+    /// - Returns: Offset to center the cropped texture area
+    private func calculateCenterOffset(for cropScale: simd_float2) -> simd_float2 {
+        // Formula: offset = (1.0 - scale) * 0.5
+        // This centers the scaled texture coordinates within [0,1] bounds
+        return (simd_float2(1.0, 1.0) - cropScale) * 0.5
+    }
+    
+    /// Calculates object-fit: cover style scale using actual dimensions (like CSS cover algorithm)
+    /// - Parameters:
+    ///   - cameraWidth: Width of the camera texture in pixels
+    ///   - cameraHeight: Height of the camera texture in pixels
+    ///   - viewportWidth: Width of the viewport in pixels
+    ///   - viewportHeight: Height of the viewport in pixels
+    /// - Returns: Uniform scale factor to achieve cover behavior (fills viewport, crops excess)
+    private func calculateObjectFitCoverScale(cameraWidth: Float, cameraHeight: Float, viewportWidth: Float, viewportHeight: Float) -> Float {
+        // CSS object-fit: cover algorithm
+        // Scale to fill the entire container while maintaining aspect ratio
+        
+        let cameraAspectRatio = cameraWidth / cameraHeight
+        let viewportAspectRatio = viewportWidth / viewportHeight
+        
+        // Determine which dimension constrains the scaling
+        // Cover means we scale by the dimension that makes the content FILL the container
+        if cameraAspectRatio < viewportAspectRatio {
+            // Camera is taller relative to viewport
+            // Scale by width to fill viewport width, crop top/bottom
+            return viewportWidth / cameraWidth
+        } else {
+            // Camera is wider relative to viewport  
+            // Scale by height to fill viewport height, crop left/right
+            return viewportHeight / cameraHeight
+        }
+    }
+    
     public func render(
         frame: ARFrame,
         viewportSize: CGSize,
@@ -169,7 +189,7 @@ public class ARCameraRenderer {
         guard let pipelineState = pipelineState,
               let vertexBuffer = vertexBuffer,
               let transformBuffer = transformBuffer else {
-            Self.log.error("AR camera renderer not properly initialized - pipelineState: \(self.pipelineState != nil), vertexBuffer: \(self.vertexBuffer != nil), transformBuffer: \(self.transformBuffer != nil)")
+            Self.log.error("AR camera renderer not properly initialized")
             return
         }
         
@@ -188,14 +208,38 @@ public class ARCameraRenderer {
         
         Self.log.info("Camera: \(cameraWidth)x\(cameraHeight) (aspect: \(cameraAspectRatio)), Viewport: \(viewportSize.width)x\(viewportSize.height) (aspect: \(viewportAspectRatio))")
         
-        // Use identity matrix since rotation is now baked into quad vertices
+        print("🎯 REVERTING TO SIMPLE ARKIT DISPLAYTRANSFORM - FIXING BLEEDING LINES")
+        
+        // REVERT: Use ARKit's full displayTransform to fix bleeding lines issue
+        // The bleeding was caused by our manual cropping going outside texture bounds
+        let cgDisplayTransform = frame.displayTransform(for: interfaceOrientation, viewportSize: viewportSize)
+        
+        // Convert full CGAffineTransform to simd_float3x3 (includes ARKit's scaling + orientation)
         let displayTransform = simd_float3x3(
-            simd_float3(1.0, 0.0, 0.0),
-            simd_float3(0.0, 1.0, 0.0),
-            simd_float3(0.0, 0.0, 1.0)
+            simd_float3(Float(cgDisplayTransform.a), Float(cgDisplayTransform.b), 0),
+            simd_float3(Float(cgDisplayTransform.c), Float(cgDisplayTransform.d), 0), 
+            simd_float3(Float(cgDisplayTransform.tx), Float(cgDisplayTransform.ty), 1)
         )
+        
+        // Calculate CSS object-fit: cover style scaling using actual dimensions
+        let objectFitCoverScale = calculateObjectFitCoverScale(
+            cameraWidth: Float(cameraWidth), 
+            cameraHeight: Float(cameraHeight),
+            viewportWidth: Float(viewportSize.width),
+            viewportHeight: Float(viewportSize.height)
+        )
+        
+        // Use inverse scale for texture cropping (scale > 1.0 means zoom in, crop more)
+        let cropScale = simd_float2(1.0/objectFitCoverScale, 1.0/objectFitCoverScale)
+        let cropOffset = calculateCenterOffset(for: cropScale)
+        
+        print("🎯 OBJECT-FIT COVER: scale=\(objectFitCoverScale), cropScale=\(cropScale), offset=\(cropOffset)")
 
-        let cameraTransform = CameraTransform(displayTransform: displayTransform)
+        let cameraTransform = CameraTransform(
+            displayTransform: displayTransform,
+            cropScale: cropScale,
+            cropOffset: cropOffset
+        )
         
         // Update transform buffer
         let transformPointer = transformBuffer.contents().bindMemory(to: CameraTransform.self, capacity: 1)
@@ -206,19 +250,13 @@ public class ARCameraRenderer {
         renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(transformBuffer, offset: 0, index: 1)
         
-        // Set depth stencil state for proper depth writing
-        if let depthStencilState = depthStencilState {
-            renderEncoder.setDepthStencilState(depthStencilState)
-        }
         
         let pixelFormat = CVPixelBufferGetPixelFormatType(capturedImage)
         
         if pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
            pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
-            print("renderYUVFrame")
             renderYUVFrame(capturedImage, renderEncoder: renderEncoder)
         } else {
-            print("renderRGBFrame")
             renderRGBFrame(capturedImage, renderEncoder: renderEncoder)
         }
         
