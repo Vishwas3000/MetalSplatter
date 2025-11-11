@@ -298,7 +298,9 @@ public class SplatRenderer {
         colorAttachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         pipelineDescriptor.colorAttachments[0] = colorAttachment
 
-        pipelineDescriptor.depthAttachmentPixelFormat = depthFormat
+        // Only set depth format if we're actually using depth buffer  
+        // In AR mode with preserveExistingContent=true, depthTexture is nil
+        pipelineDescriptor.depthAttachmentPixelFormat = preserveExistingContent ? .invalid : depthFormat
 
         pipelineDescriptor.maxVertexAmplificationCount = maxViewCount
 
@@ -310,7 +312,8 @@ public class SplatRenderer {
 
         let depthStateDescriptor = MTLDepthStencilDescriptor()
         depthStateDescriptor.depthCompareFunction = MTLCompareFunction.always
-        depthStateDescriptor.isDepthWriteEnabled = writeDepth
+        // Only enable depth writes if we have depth buffer AND not preserving existing content
+        depthStateDescriptor.isDepthWriteEnabled = writeDepth && !preserveExistingContent
         return device.makeDepthStencilState(descriptor: depthStateDescriptor)!
     }
 
@@ -351,7 +354,8 @@ public class SplatRenderer {
 
         let depthStateDescriptor = MTLDepthStencilDescriptor()
         depthStateDescriptor.depthCompareFunction = MTLCompareFunction.always
-        depthStateDescriptor.isDepthWriteEnabled = writeDepth
+        // Only enable depth writes if we have depth buffer AND not preserving existing content
+        depthStateDescriptor.isDepthWriteEnabled = writeDepth && !preserveExistingContent
         return device.makeDepthStencilState(descriptor: depthStateDescriptor)!
     }
 
@@ -381,7 +385,8 @@ public class SplatRenderer {
 
         let depthStateDescriptor = MTLDepthStencilDescriptor()
         depthStateDescriptor.depthCompareFunction = MTLCompareFunction.always
-        depthStateDescriptor.isDepthWriteEnabled = writeDepth
+        // Only enable depth writes if we have depth buffer AND not preserving existing content
+        depthStateDescriptor.isDepthWriteEnabled = writeDepth && !preserveExistingContent
         return device.makeDepthStencilState(descriptor: depthStateDescriptor)!
     }
 
