@@ -37,11 +37,9 @@ class MetalKitSceneRenderer: NSObject, MTKViewDelegate {
     var rotationVelocityX: Float = 0.0
     var rotationVelocityY: Float = 0.0
     
-    // Zoom/Scale control
+    // Zoom/Scale control - unlimited zoom range
     var scale: Float = 1.0
     var scaleVelocity: Float = 0.0
-    var minScale: Float = 0.1
-    var maxScale: Float = 5.0
     
     // Gesture tracking
     var lastPanLocation: CGPoint = .zero
@@ -150,9 +148,12 @@ class MetalKitSceneRenderer: NSObject, MTKViewDelegate {
         case .changed:
             guard isPinching else { return }
             
-            // Apply scale change directly using gesture.scale
+            // Apply scale change directly using gesture.scale (unlimited range)
             let newScale = scale * Float(gesture.scale)
-            scale = max(minScale, min(maxScale, newScale))
+            // Only prevent negative scale values
+            if newScale > 0.001 {
+                scale = newScale
+            }
             
             // Calculate velocity for momentum
             scaleVelocity = Float(gesture.velocity) * scaleSensitivity * 0.01
@@ -255,10 +256,13 @@ class MetalKitSceneRenderer: NSObject, MTKViewDelegate {
             rotationVelocityY = 0.0
         }
         
-        // Apply scale momentum
+        // Apply scale momentum (unlimited range)
         if abs(scaleVelocity) > minimumScaleVelocity {
             let newScale = scale + scaleVelocity
-            scale = max(minScale, min(maxScale, newScale))
+            // Only prevent negative scale values
+            if newScale > 0.001 {
+                scale = newScale
+            }
             scaleVelocity *= momentumDecay
         } else {
             scaleVelocity = 0.0

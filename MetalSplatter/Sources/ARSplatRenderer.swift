@@ -45,9 +45,7 @@ public class ARSplatRenderer: NSObject {
     public var fixGravityFlip: Bool = true  // Apply 180° X-axis rotation to fix gravity orientation
     
     
-    // Zoom configuration
-    private let minScale: Float = 0.01     // Minimum zoom (very small)
-    private let maxScale: Float = 4.0      // Maximum zoom (2x original size)
+    // Zoom configuration - unlimited zoom range
     private let zoomStep: Float = 0.8      // Zoom increment per step
     
     // Orientation tracking
@@ -438,54 +436,55 @@ public class ARSplatRenderer: NSObject {
     
     /// Zoom in the splat model
     public func zoomIn() {
-        let newScale = min(splatScale + zoomStep, maxScale)
-        if newScale != splatScale {
-            splatScale = newScale
-            Self.log.info("Zoomed in to scale: \(self.splatScale)")
-        }
+        let newScale = splatScale + zoomStep
+        splatScale = newScale
+        Self.log.info("Zoomed in to scale: \(self.splatScale)")
     }
     
     /// Zoom out the splat model
     public func zoomOut() {
-        let newScale = max(splatScale - zoomStep, minScale)
-        if newScale != splatScale {
+        let newScale = splatScale - zoomStep
+        // Prevent negative scale values
+        if newScale > 0 {
             splatScale = newScale
             Self.log.info("Zoomed out to scale: \(self.splatScale)")
         }
     }
     
     /// Set specific zoom level
-    /// - Parameter scale: The scale factor (will be clamped to min/max bounds)
+    /// - Parameter scale: The scale factor (unlimited range, must be positive)
     public func setZoom(scale: Float) {
-        let clampedScale = max(minScale, min(scale, maxScale))
-        splatScale = clampedScale
-        Self.log.info("Set zoom scale to: \(self.splatScale)")
+        // Only prevent negative scale values
+        if scale > 0 {
+            splatScale = scale
+            Self.log.info("Set zoom scale to: \(self.splatScale)")
+        }
     }
     
-    /// Get current zoom level as a percentage (0.0 to 1.0)
-    /// where 0.0 = minimum scale and 1.0 = maximum scale
-    public var zoomLevel: Float {
-        return (splatScale - minScale) / (maxScale - minScale)
+    /// Get current zoom scale value (unlimited range)
+    public var zoomScale: Float {
+        return splatScale
     }
     
-    /// Set zoom level as a percentage (0.0 to 1.0)
-    /// - Parameter level: Percentage between 0.0 (min) and 1.0 (max)
-    public func setZoomLevel(_ level: Float) {
-        let clampedLevel = max(0.0, min(level, 1.0))
-        let newScale = minScale + clampedLevel * (maxScale - minScale)
-        splatScale = newScale
-        Self.log.info("Set zoom level to \(clampedLevel * 100)% (scale: \(self.splatScale))")
+    /// Set zoom using a multiplier of the base scale (0.1)
+    /// - Parameter multiplier: Scale multiplier (e.g., 1.0 = base scale, 2.0 = double size)
+    public func setZoomMultiplier(_ multiplier: Float) {
+        if multiplier > 0 {
+            let baseScale: Float = 0.1  // Original base scale
+            splatScale = baseScale * multiplier
+            Self.log.info("Set zoom multiplier to \(multiplier)x (scale: \(self.splatScale))")
+        }
     }
     
     
-    /// Check if can zoom in further
+    /// Always can zoom in (unlimited)
     public var canZoomIn: Bool {
-        return splatScale < maxScale
+        return true
     }
     
-    /// Check if can zoom out further
+    /// Can zoom out if scale is positive
     public var canZoomOut: Bool {
-        return splatScale > minScale
+        return splatScale > 0.001  // Prevent extremely small scales
     }
 }
 
