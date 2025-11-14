@@ -11,6 +11,11 @@ typealias Float16 = Float
 #warning("x86_64 targets are unsupported by MetalSplatter and will fail at runtime. MetalSplatter builds on x86_64 only because Xcode builds Swift Packages as universal binaries and provides no way to override this. When Swift supports Float16 on x86_64, this may be revisited.")
 #endif
 
+public struct SPZColorSettings {
+    public static var brightness: Float = 4.0    // More aggressive brightness boost
+    public static var gamma: Float = 4.0         // Lower gamma for more contrast
+}
+
 public class SplatRenderer {
     enum Constants {
         // Keep in sync with Shaders.metal : maxViewCount
@@ -649,12 +654,33 @@ public class SplatRenderer {
             }
         }
     }
+    
+    // SPZ-specific color correction function
+    private static func applySPZColorCorrection(_ color: SIMD3<Float>) -> SIMD3<Float> {
+        let brightness = SPZColorSettings.brightness
+        let gamma = SPZColorSettings.gamma
+        return SIMD3<Float>(
+            min(1.0, pow(color.x, gamma) * brightness),
+            min(1.0, pow(color.y, gamma) * brightness),
+            min(1.0, pow(color.z, gamma) * brightness)
+        )
+    }
 }
 
 extension SplatRenderer.Splat {
     init(_ splat: SplatScenePoint) {
+        // Handle SPZ vs PLY color processing differently
+        var colorRGB = splat.color.asLinearFloat
+        if splat.isSpz {
+            // SPZ: Apply SPZ-specific color correction (configurable)
+            colorRGB = SplatRenderer.applySPZColorCorrection(colorRGB)
+        } else {
+            // PLY/SPLAT: Apply standard sRGB to linear conversion
+            colorRGB = colorRGB.sRGBToLinear
+        }
+        
         self.init(position: splat.position,
-                  color: .init(splat.color.asLinearFloat.sRGBToLinear, splat.opacity.asLinearFloat),
+                  color: .init(colorRGB, splat.opacity.asLinearFloat),
                   scale: splat.scale.asLinearFloat,
                   rotation: splat.rotation.normalized,
                   isSpz: splat.isSpz)
