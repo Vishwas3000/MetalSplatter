@@ -476,18 +476,12 @@ public class SPZParser {
 
 extension SPZParser.SplatData {
     public func toSplatScenePoint() -> SplatScenePoint {
-        let testRotation = simd_quatf(angle: 0, axis: SIMD3<Float>(0, 1, 0))  // Identity
-        
-//        let avgScale = (self.scale.x + self.scale.y + self.scale.z) / 3.0
-        let geometricMean = pow(self.scale.x * self.scale.y * self.scale.z, 1.0/3.0)
-        let uniformScale = SIMD3<Float>(geometricMean, geometricMean, geometricMean)
-        
-
+        // Use original anisotropic scale instead of uniform scale
         return SplatScenePoint(
             position: self.position,
             color: .linearFloat(self.color),  // SPZ color is already in 0-1 range
             opacity: .linearFloat(self.opacity),  // SPZ opacity is already in 0-1 range
-            scale: .linearFloat(uniformScale),  // Use the scale directly
+            scale: .linearFloat(self.scale),  // Use original anisotropic scale
             rotation: rotation,  // Use the rotation quaternion directly
             isSpz: true
         )
