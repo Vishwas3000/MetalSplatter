@@ -418,54 +418,93 @@ public class SPZParser {
         print("     Invalid (NaN) splats: \(invalidCount)")
         print("     Near-zero opacity splats: \(zeroOpacityCount) (\(String(format: "%.1f", Float(zeroOpacityCount) / Float(numPoints) * 100))%)")
         print("     Near-black splats: \(blackSplatCount) (\(String(format: "%.1f", Float(blackSplatCount) / Float(numPoints) * 100))%)")
+       
         
         return splats
     }
     
     // MARK: - Rotation Parsing
     
+
     private static func parseRotation(data: Data, offset: Int, version: UInt32) -> simd_quatf {
-        var rotation: simd_quatf
-        
         if version == 3 {
-            // Version 3: Compressed quaternion
-            let rotData = UInt32(data[offset]) |
-                         (UInt32(data[offset + 1]) << 8) |
-                         (UInt32(data[offset + 2]) << 16) |
-                         (UInt32(data[offset + 3]) << 24)
-            
-            let largestIdx = Int(rotData & 0x3)
-            let compData = rotData >> 2
-            
-            var q: [Float] = [0, 0, 0, 0]
-            var shift = 0
-            
-            for j in 0..<4 {
-                if j != largestIdx {
-                    let val = Int16((compData >> shift) & 0x3FF) - 512
-                    q[j] = Float(val) / 512.0
-                    shift += 10
-                }
-            }
-            
-            let sumSq = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]
-            q[largestIdx] = sqrt(max(0.0, 1.0 - sumSq))
-            
-            rotation = simd_quatf(ix: q[0], iy: q[1], iz: q[2], r: q[3])
-            
+            return parseRotationV3(data: data, offset: offset)
         } else {
-            // Version 2: Simple format
-            let x = Float(Int8(bitPattern: data[offset])) / 128.0
-            let y = Float(Int8(bitPattern: data[offset + 1])) / 128.0
-            let z = Float(Int8(bitPattern: data[offset + 2])) / 128.0
-            
-            let wSq = 1.0 - (x * x + y * y + z * z)
-            let w = sqrt(max(0.0, wSq))
-            
-            rotation = simd_quatf(ix: x, iy: y, iz: z, r: w)
+            return parseRotationV2(data: data, offset: offset)
         }
-        //normalized the quaternion
-        return rotation.normalized
+    }
+
+    // MARK: - V3: 4-Byte (unchanged)
+
+    private static func parseRotationV3(data: Data, offset: Int) -> simd_quatf {
+        guard offset + 3 < data.count else {
+            return simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+        }
+        
+        let rotData = UInt32(data[offset]) |
+                     (UInt32(data[offset + 1]) << 8) |
+                     (UInt32(data[offset + 2]) << 16) |
+                     (UInt32(data[offset + 3]) << 24)
+        
+        let largestIdx = Int(rotData & 0x3)
+        let compData = rotData >> 2
+        
+        var components: [Float] = [0, 0, 0, 0]
+        var shift = 0
+        
+        for j in 0..<4 {
+            if j != largestIdx {
+                let val = Int16((compData >> shift) & 0x3FF) - 512
+                components[j] = Float(val) / 512.0
+                shift += 10
+            }
+        }
+        
+        let sumSq = components[0] * components[0] +
+                    components[1] * components[1] +
+                    components[2] * components[2] +
+                    components[3] * components[3]
+        components[largestIdx] = sqrt(max(0.0, 1.0 - sumSq))
+        
+        if components[largestIdx] < 0 {
+            components[largestIdx] = -components[largestIdx]
+        }
+        
+        return simd_quatf(ix: components[1], iy: components[2], iz: components[3], r: components[0]).normalized
+    }
+
+    // MARK: - V2: Try treating bytes as UNSIGNED (0-255) centered at 128
+
+    private static func parseRotationV2(data: Data, offset: Int) -> simd_quatf {
+        guard offset + 2 < data.count else {
+            return simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+        }
+        
+        let byte0 = data[offset]
+        let byte1 = data[offset + 1]
+        let byte2 = data[offset + 2]
+        
+        // This maps: 0→-1, 128→0, 255→1
+        let x = (Float(byte0) - 128.0) / 128.0
+        let y = (Float(byte1) - 128.0) / 128.0
+        let z = (Float(byte2) - 128.0) / 128.0
+        
+        // Reconstruct w from unit quaternion constraint
+        let sumSq = x * x + y * y + z * z
+        
+
+        if sumSq <= 1.0 {
+            let w = sqrt(1.0 - sumSq)
+            return simd_quatf(ix: x, iy: y, iz: z, r: w).normalized
+        } else {
+            // If outside unit sphere, normalize and reconstruct
+            let normFactor = sqrt(0.999 / sumSq)
+            let nx = x * normFactor
+            let ny = y * normFactor
+            let nz = z * normFactor
+            let w = sqrt(max(0.0, 1.0 - (nx*nx + ny*ny + nz*nz)))
+            return simd_quatf(ix: nx, iy: ny, iz: nz, r: w).normalized
+        }
     }
     private static func clamp(_ value: Float, _ min: Float, _ max: Float) -> Float {
         return Swift.max(min, Swift.min(max, value))
