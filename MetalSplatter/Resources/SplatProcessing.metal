@@ -1,5 +1,60 @@
 #import "SplatProcessing.h"
 
+// Spherical harmonics coefficients for degrees 0-3 (16 total)
+constant float SH_C0 = 0.28209479177387814f;
+constant float SH_C1 = 0.4886025119029199f;
+constant float SH_C2[] = {
+    1.0925484305920792f,
+    -1.0925484305920792f,
+    0.31539156525252005f,
+    -1.0925484305920792f,
+    0.5462742152960396f
+};
+constant float SH_C3[] = {
+    -0.5900435899266435f,
+    2.890611442640554f,
+    -0.4570457994644658f,
+    0.3731763325901154f,
+    -0.4570457994644658f,
+    1.445305721320277f,
+    -0.5900435899266435f
+};
+
+// Compute view-dependent color from spherical harmonics coefficients
+half3 computeColorFromSH(Splat splat, float3 viewDirection) {
+    // Degree 0 (constant term) - base SH coefficient with SH_C0 scaling
+    half3 result = splat.color.rgb;
+    
+//    float x = viewDirection.x;
+//    float y = viewDirection.y;
+//    float z = viewDirection.z;
+//    
+//    // Degree 1 (linear terms) - 3 coefficients (SH[1-3])
+//    result += half(SH_C1) * (-y * half3(splat.sh1) + z * half3(splat.sh2) - x * half3(splat.sh3));
+//    
+//    float xx = x * x, yy = y * y, zz = z * z;
+//    float xy = x * y, yz = y * z, xz = x * z;
+//    
+//    // Degree 2 (quadratic terms) - 5 coefficients (SH[4-8])
+//    result += half(SH_C2[0]) * xy * half3(splat.sh4);
+//    result += half(SH_C2[1]) * yz * half3(splat.sh5);
+//    result += half(SH_C2[2]) * (2.0f * zz - xx - yy) * half3(splat.sh6);
+//    result += half(SH_C2[3]) * xz * half3(splat.sh7);
+//    result += half(SH_C2[4]) * (xx - yy) * half3(splat.sh8);
+//    
+//    // Degree 3 (cubic terms) - 7 coefficients (SH[9-15])
+//    result += half(SH_C3[0]) * y * (3.0f * xx - yy) * half3(splat.sh9);
+//    result += half(SH_C3[1]) * xy * z * half3(splat.sh10);
+//    result += half(SH_C3[2]) * y * (4.0f * zz - xx - yy) * half3(splat.sh11);
+//    result += half(SH_C3[3]) * z * (2.0f * zz - 3.0f * xx - 3.0f * yy) * half3(splat.sh12);
+//    result += half(SH_C3[4]) * x * (4.0f * zz - xx - yy) * half3(splat.sh13);
+//    result += half(SH_C3[5]) * z * (xx - yy) * half3(splat.sh14);
+//    result += half(SH_C3[6]) * x * (xx - 3.0f * yy) * half3(splat.sh15);
+    
+    // Convert to valid color range (0-1) and clamp
+    return clamp(result , 0.0h, 1.0h);
+}
+
 float3 calcCovariance2D(float3 viewPos,
                         packed_half3 cov3Da,
                         packed_half3 cov3Db,
@@ -115,7 +170,23 @@ FragmentIn splatVertex(Splat splat,
                           projectedCenter.z,
                           projectedCenter.w);
     out.relativePosition = kBoundsRadius * relativeCoordinates;
-    out.color = splat.color;
+    
+    // Use spherical harmonics if enabled, otherwise use basic color
+    if (uniforms.useSphericalHarmonics) {
+        // Calculate view direction for spherical harmonics
+        // Use view space position to get direction vector
+        float4 worldPos4 = float4(splat.position, 1.0);
+        float4 viewPos4 = uniforms.viewMatrix * worldPos4;
+        float3 viewDirection = normalize(-viewPos4.xyz);  // Direction from camera to point in view space
+        
+        // Compute view-dependent color using spherical harmonics
+        half3 shColor = computeColorFromSH(splat, viewDirection);
+        out.color = half4(shColor, splat.color.a);  // Keep original alpha
+    } else {
+        // Fallback to basic color (no view-dependent effects)
+        out.color = splat.color;
+    }
+    
     return out;
 }
 

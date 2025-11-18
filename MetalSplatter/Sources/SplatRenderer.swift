@@ -66,6 +66,8 @@ public class SplatRenderer {
 
         var splatCount: UInt32
         var indexedSplatCount: UInt32
+        
+        var useSphericalHarmonics: UInt32  // 1 = enabled, 0 = disabled
     }
 
     // Keep in sync with Shaders.metal : UniformsArray
@@ -102,9 +104,25 @@ public class SplatRenderer {
     // Keep in sync with Shaders.metal : Splat
     struct Splat {
         var position: MTLPackedFloat3
-        var color: PackedRGBHalf4
+        var color: PackedRGBHalf4     // SH[0] coefficients (RGB + opacity)
         var covA: PackedHalf3
         var covB: PackedHalf3
+        // Additional spherical harmonics coefficients (SH[1-15]) stored as half precision
+        var sh1: PackedHalf3          // SH[1] RGB
+        var sh2: PackedHalf3          // SH[2] RGB  
+        var sh3: PackedHalf3          // SH[3] RGB
+        var sh4: PackedHalf3          // SH[4] RGB
+        var sh5: PackedHalf3          // SH[5] RGB
+        var sh6: PackedHalf3          // SH[6] RGB
+        var sh7: PackedHalf3          // SH[7] RGB
+        var sh8: PackedHalf3          // SH[8] RGB
+        var sh9: PackedHalf3          // SH[9] RGB
+        var sh10: PackedHalf3         // SH[10] RGB
+        var sh11: PackedHalf3         // SH[11] RGB
+        var sh12: PackedHalf3         // SH[12] RGB
+        var sh13: PackedHalf3         // SH[13] RGB
+        var sh14: PackedHalf3         // SH[14] RGB
+        var sh15: PackedHalf3         // SH[15] RGB
     }
 
     struct SplatIndexAndDepth {
@@ -118,6 +136,9 @@ public class SplatRenderer {
     public let sampleCount: Int
     public let maxViewCount: Int
     public let maxSimultaneousRenders: Int
+    
+    // Spherical harmonics configuration  
+    public var useSphericalHarmonics: Bool = true  // Temporarily enabled to test parsing
 
     /**
      High-quality depth takes longer, but results in a continuous, more-representative depth buffer result, which is useful for reducing artifacts during Vision Pro's frame reprojection.
@@ -429,7 +450,8 @@ public class SplatRenderer {
                                     viewMatrix: viewport.viewMatrix,
                                     screenSize: SIMD2(x: UInt32(viewport.screenSize.x), y: UInt32(viewport.screenSize.y)),
                                     splatCount: splatCount,
-                                    indexedSplatCount: indexedSplatCount)
+                                    indexedSplatCount: indexedSplatCount,
+                                    useSphericalHarmonics: useSphericalHarmonics ? 1 : 0)
             self.uniforms.pointee.setUniforms(index: i, uniforms)
         }
 
@@ -668,21 +690,53 @@ public class SplatRenderer {
 }
 
 extension SplatRenderer.Splat {
+    private static var shLoggedCount = 0
+    
     init(_ splat: SplatScenePoint) {
-        // Handle SPZ vs PLY color processing differently
-        var colorRGB = splat.color.asLinearFloat
+        // Extract spherical harmonics coefficients
+        let shCoefficients = splat.color.asSphericalHarmonic
+        
+        // Log color conversion for first few splats
+        if Self.shLoggedCount < 10 {
+            print("🎯 GPU Splat #\(Self.shLoggedCount + 1) Color Conversion:")
+            print("   SplatScenePoint color type: \(splat.color)")
+            print("   SH coefficients count: \(shCoefficients.count)")
+            if !shCoefficients.isEmpty {
+                print("   SH[0] (base): (\(String(format: "%.3f", shCoefficients[0].x)), \(String(format: "%.3f", shCoefficients[0].y)), \(String(format: "%.3f", shCoefficients[0].z)))")
+            }
+            print("   asLinearFloat: (\(String(format: "%.3f", splat.color.asLinearFloat.x)), \(String(format: "%.3f", splat.color.asLinearFloat.y)), \(String(format: "%.3f", splat.color.asLinearFloat.z)))")
+            Self.shLoggedCount += 1
+        }
+        
+        // Handle SPZ vs PLY color processing differently for SH[0] (base color)
+        var colorRGB = shCoefficients[0]  // SH[0] is the base color
         if splat.isSpz {
             // SPZ: Apply SPZ-specific color correction (configurable)
+            let originalRGB = colorRGB
             colorRGB = SplatRenderer.applySPZColorCorrection(colorRGB)
+            
+//            if Self.shLoggedCount <= 10 {
+//                print("   SPZ color correction:")
+//                print("     Before: (\(String(format: "%.3f", originalRGB.x)), \(String(format: "%.3f", originalRGB.y)), \(String(format: "%.3f", originalRGB.z)))")
+//                print("     After: (\(String(format: "%.3f", colorRGB.x)), \(String(format: "%.3f", colorRGB.y)), \(String(format: "%.3f", colorRGB.z)))")
+//            }
         } else {
             // PLY/SPLAT: Apply standard sRGB to linear conversion
             colorRGB = colorRGB.sRGBToLinear
         }
         
+        let finalColor = SIMD4<Float>(colorRGB, splat.opacity.asLinearFloat)
+        
+//        if Self.shLoggedCount <= 10 {
+//            print("   Final GPU color: (\(String(format: "%.3f", finalColor.x)), \(String(format: "%.3f", finalColor.y)), \(String(format: "%.3f", finalColor.z)), α=\(String(format: "%.3f", finalColor.w)))")
+//            print("")
+//        }
+        
         self.init(position: splat.position,
                   color: .init(colorRGB, splat.opacity.asLinearFloat),
                   scale: splat.scale.asLinearFloat,
                   rotation: splat.rotation.normalized,
+                  sphericalHarmonics: shCoefficients,
                   isSpz: splat.isSpz)
     }
 
@@ -690,6 +744,7 @@ extension SplatRenderer.Splat {
          color: SIMD4<Float>,
          scale: SIMD3<Float>,
          rotation: simd_quatf,
+         sphericalHarmonics: [SIMD3<Float>],
          isSpz: Bool) {
         let transform = simd_float3x3(rotation) * simd_float3x3(diagonal: scale)
         var cov3D = transform * transform.transpose
@@ -699,10 +754,50 @@ extension SplatRenderer.Splat {
             cov3D = cov3D * scaleFactor
         }
         
-        self.init(position: MTLPackedFloat3Make(position.x, position.y, position.z),
-                  color: SplatRenderer.PackedRGBHalf4(r: Float16(color.x), g: Float16(color.y), b: Float16(color.z), a: Float16(color.w)),
-                  covA: SplatRenderer.PackedHalf3(x: Float16(cov3D[0, 0]), y: Float16(cov3D[0, 1]), z: Float16(cov3D[0, 2])),
-                  covB: SplatRenderer.PackedHalf3(x: Float16(cov3D[1, 1]), y: Float16(cov3D[1, 2]), z: Float16(cov3D[2, 2])))
+        // Helper function to safely get SH coefficient or return zero
+        func getSHCoefficient(at index: Int) -> SIMD3<Float> {
+            return index < sphericalHarmonics.count ? sphericalHarmonics[index] : SIMD3<Float>(0, 0, 0)
+        }
+        
+        // Convert SH coefficients to half precision (skip index 0 as it's already in color)
+        let zero = SplatRenderer.PackedHalf3(x: 0, y: 0, z: 0)
+        
+        self.position = MTLPackedFloat3Make(position.x, position.y, position.z)
+        self.color = SplatRenderer.PackedRGBHalf4(r: Float16(color.x), g: Float16(color.y), b: Float16(color.z), a: Float16(color.w))
+        self.covA = SplatRenderer.PackedHalf3(x: Float16(cov3D[0, 0]), y: Float16(cov3D[0, 1]), z: Float16(cov3D[0, 2]))
+        self.covB = SplatRenderer.PackedHalf3(x: Float16(cov3D[1, 1]), y: Float16(cov3D[1, 2]), z: Float16(cov3D[2, 2]))
+        
+        // Convert additional SH coefficients to half precision
+        let sh1Coeff = getSHCoefficient(at: 1)
+        self.sh1 = SplatRenderer.PackedHalf3(x: Float16(sh1Coeff.x), y: Float16(sh1Coeff.y), z: Float16(sh1Coeff.z))
+        let sh2Coeff = getSHCoefficient(at: 2)
+        self.sh2 = SplatRenderer.PackedHalf3(x: Float16(sh2Coeff.x), y: Float16(sh2Coeff.y), z: Float16(sh2Coeff.z))
+        let sh3Coeff = getSHCoefficient(at: 3)
+        self.sh3 = SplatRenderer.PackedHalf3(x: Float16(sh3Coeff.x), y: Float16(sh3Coeff.y), z: Float16(sh3Coeff.z))
+        let sh4Coeff = getSHCoefficient(at: 4)
+        self.sh4 = SplatRenderer.PackedHalf3(x: Float16(sh4Coeff.x), y: Float16(sh4Coeff.y), z: Float16(sh4Coeff.z))
+        let sh5Coeff = getSHCoefficient(at: 5)
+        self.sh5 = SplatRenderer.PackedHalf3(x: Float16(sh5Coeff.x), y: Float16(sh5Coeff.y), z: Float16(sh5Coeff.z))
+        let sh6Coeff = getSHCoefficient(at: 6)
+        self.sh6 = SplatRenderer.PackedHalf3(x: Float16(sh6Coeff.x), y: Float16(sh6Coeff.y), z: Float16(sh6Coeff.z))
+        let sh7Coeff = getSHCoefficient(at: 7)
+        self.sh7 = SplatRenderer.PackedHalf3(x: Float16(sh7Coeff.x), y: Float16(sh7Coeff.y), z: Float16(sh7Coeff.z))
+        let sh8Coeff = getSHCoefficient(at: 8)
+        self.sh8 = SplatRenderer.PackedHalf3(x: Float16(sh8Coeff.x), y: Float16(sh8Coeff.y), z: Float16(sh8Coeff.z))
+        let sh9Coeff = getSHCoefficient(at: 9)
+        self.sh9 = SplatRenderer.PackedHalf3(x: Float16(sh9Coeff.x), y: Float16(sh9Coeff.y), z: Float16(sh9Coeff.z))
+        let sh10Coeff = getSHCoefficient(at: 10)
+        self.sh10 = SplatRenderer.PackedHalf3(x: Float16(sh10Coeff.x), y: Float16(sh10Coeff.y), z: Float16(sh10Coeff.z))
+        let sh11Coeff = getSHCoefficient(at: 11)
+        self.sh11 = SplatRenderer.PackedHalf3(x: Float16(sh11Coeff.x), y: Float16(sh11Coeff.y), z: Float16(sh11Coeff.z))
+        let sh12Coeff = getSHCoefficient(at: 12)
+        self.sh12 = SplatRenderer.PackedHalf3(x: Float16(sh12Coeff.x), y: Float16(sh12Coeff.y), z: Float16(sh12Coeff.z))
+        let sh13Coeff = getSHCoefficient(at: 13)
+        self.sh13 = SplatRenderer.PackedHalf3(x: Float16(sh13Coeff.x), y: Float16(sh13Coeff.y), z: Float16(sh13Coeff.z))
+        let sh14Coeff = getSHCoefficient(at: 14)
+        self.sh14 = SplatRenderer.PackedHalf3(x: Float16(sh14Coeff.x), y: Float16(sh14Coeff.y), z: Float16(sh14Coeff.z))
+        let sh15Coeff = getSHCoefficient(at: 15)
+        self.sh15 = SplatRenderer.PackedHalf3(x: Float16(sh15Coeff.x), y: Float16(sh15Coeff.y), z: Float16(sh15Coeff.z))
     }
 }
 
