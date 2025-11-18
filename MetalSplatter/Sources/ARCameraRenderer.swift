@@ -184,7 +184,6 @@ public class ARCameraRenderer {
         interfaceOrientation: UIInterfaceOrientation,
         to renderEncoder: MTLRenderCommandEncoder
     ) {
-        Self.log.info("AR camera render called")
         
         guard let pipelineState = pipelineState,
               let vertexBuffer = vertexBuffer,
@@ -205,10 +204,6 @@ public class ARCameraRenderer {
         let cameraHeight = CVPixelBufferGetHeight(capturedImage)
         let cameraAspectRatio = Float(cameraWidth) / Float(cameraHeight)
         let viewportAspectRatio = Float(viewportSize.width) / Float(viewportSize.height)
-        
-        Self.log.info("Camera: \(cameraWidth)x\(cameraHeight) (aspect: \(cameraAspectRatio)), Viewport: \(viewportSize.width)x\(viewportSize.height) (aspect: \(viewportAspectRatio))")
-        
-        print("🎯 REVERTING TO SIMPLE ARKIT DISPLAYTRANSFORM - FIXING BLEEDING LINES")
         
         // REVERT: Use ARKit's full displayTransform to fix bleeding lines issue
         // The bleeding was caused by our manual cropping going outside texture bounds
@@ -233,7 +228,7 @@ public class ARCameraRenderer {
         let cropScale = simd_float2(1.0/objectFitCoverScale, 1.0/objectFitCoverScale)
         let cropOffset = calculateCenterOffset(for: cropScale)
         
-        print("🎯 OBJECT-FIT COVER: scale=\(objectFitCoverScale), cropScale=\(cropScale), offset=\(cropOffset)")
+//        print("🎯 OBJECT-FIT COVER: scale=\(objectFitCoverScale), cropScale=\(cropScale), offset=\(cropOffset)")
 
         let cameraTransform = CameraTransform(
             displayTransform: displayTransform,
@@ -262,7 +257,6 @@ public class ARCameraRenderer {
         
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         renderEncoder.popDebugGroup()
-        Self.log.info("AR camera render completed")
     }
     
     private func renderYUVFrame(_ pixelBuffer: CVPixelBuffer, renderEncoder: MTLRenderCommandEncoder) {

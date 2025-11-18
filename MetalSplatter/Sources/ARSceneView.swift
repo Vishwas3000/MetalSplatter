@@ -29,7 +29,6 @@ public struct ARSceneView: UIViewRepresentable {
         }
         
         @objc func displayLinkCallback() {
-            print("🔄 Display link callback triggered")
             guard let metalKitView = metalKitView,
                   isViewActive else { 
                 print("❌ Display link guard failed - view: \(metalKitView != nil), active: \(isViewActive)")
@@ -38,27 +37,11 @@ public struct ARSceneView: UIViewRepresentable {
             
             // Try both approaches
             print("📱 Calling setNeedsDisplay on MTKView")
-            metalKitView.setNeedsDisplay()
+//            metalKitView.setNeedsDisplay()
             
             // Also try calling draw() directly since setNeedsDisplay isn't working
             print("🎯 Calling draw() directly on MTKView")
-            metalKitView.draw()
-            
-            // Check MTKView state every few frames
-            if Int.random(in: 0..<60) == 0 { // Every ~1 second
-                print("📊 MTKView State Check:")
-                print("   Frame: \(metalKitView.frame)")
-                print("   Bounds: \(metalKitView.bounds)")
-                print("   Superview: \(metalKitView.superview != nil)")
-                print("   Window: \(metalKitView.window != nil)")
-                print("   Hidden: \(metalKitView.isHidden)")
-                print("   Alpha: \(metalKitView.alpha)")
-                print("   color value: \(metalKitView.backgroundColor)")
-                print("   isPaused: \(metalKitView.isPaused)")
-                print("   enableSetNeedsDisplay: \(metalKitView.enableSetNeedsDisplay)")
-                print("   Delegate: \(metalKitView.delegate != nil)")
-                print("   Device: \(metalKitView.device != nil)")
-            }
+//            metalKitView.draw()
         }
         
         func startDisplayLink() {
@@ -180,8 +163,8 @@ public struct ARSceneView: UIViewRepresentable {
             metalKitView.setNeedsDisplay()
             print("Triggered initial setNeedsDisplay")
             
-            // Start the manual display link
-            context.coordinator.startDisplayLink()
+            // TODO: Check if i actually need this later for make sure the AR scene is refreshing every frame
+            //            context.coordinator.startDisplayLink()
             
             // Start AR session first if needed
             print("Starting AR session immediately")
@@ -389,8 +372,6 @@ class ARSceneViewDelegate: NSObject, MTKViewDelegate {
             return
         }
         
-        print("About to render with AR enabled: \(renderer.isAREnabled)")
-        
         do {
             try renderer.render(
                 viewports: [], // ARSplatRenderer handles viewport creation internally
@@ -401,7 +382,6 @@ class ARSceneViewDelegate: NSObject, MTKViewDelegate {
                 renderTargetArrayLength: 0,
                 to: commandBuffer
             )
-            print("Render completed successfully")
         } catch {
             print("Error rendering AR scene: \(error)")
             print("Error details: \(error.localizedDescription)")
@@ -412,13 +392,10 @@ class ARSceneViewDelegate: NSObject, MTKViewDelegate {
         commandBuffer.addCompletedHandler { commandBuffer in
             if let error = commandBuffer.error {
                 print("Command buffer completed with error: \(error)")
-            } else {
-                print("Command buffer completed successfully")
-            }
+            } else {}
         }
         
         commandBuffer.commit()
-        print("Frame presented and committed")
     }
     
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {

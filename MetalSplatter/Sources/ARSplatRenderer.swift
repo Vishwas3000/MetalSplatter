@@ -239,12 +239,9 @@ public class ARSplatRenderer: NSObject {
         
         let hasFrame = arSession.currentFrame != nil
         let frameTimestamp = arSession.currentFrame?.timestamp ?? -1
-        print("=== AR enabled: \(self.isAREnabled), has frame: \(hasFrame), timestamp: \(frameTimestamp)")
         
-        Self.log.info("Render called - AR enabled: \(self.isAREnabled), has frame: \(hasFrame), timestamp: \(frameTimestamp)")
         
         if isAREnabled, let currentFrame = arSession.currentFrame {
-            Self.log.info("Rendering AR composition with frame timestamp: \(currentFrame.timestamp)")
             try renderARComposition(
                 frame: currentFrame,
                 colorTexture: colorTexture,
@@ -255,7 +252,6 @@ public class ARSplatRenderer: NSObject {
                 to: commandBuffer
             )
         } else if isAREnabled {
-            Self.log.info("AR enabled but no frame available - rendering fallback")
             // Render a colored background to show AR mode is active but no frames yet
             try renderFallbackBackground(
                 colorTexture: colorTexture,
