@@ -13,6 +13,4 @@ FragmentIn splatVertex(Splat splat,
                        Uniforms uniforms,
                        uint relativeVertexIndex);
 
-half3 computeColorFromSH(Splat splat, float3 viewDirection);
-
 half splatFragmentAlpha(half2 relativePosition, half splatAlpha);

@@ -96,8 +96,6 @@ public class SPZParser {
         var color: SIMD3<Float>
         var opacity: Float
         
-        var sphericalHarmonics: [SIMD3<Float>] = [] // SH coefficients beyond degree 0
-        
         var depth: Float = 0
     }
     
@@ -198,14 +196,7 @@ public class SPZParser {
         let scalesSize = numPoints * 3
         let rotationsSize = numPoints * (header.version == 3 ? 4 : 3)
         
-        // Calculate spherical harmonics size
-        // For degree n: total coefficients = (n+1)^2, but colors already contain SH[0]
-        // So additional SH coefficients = (n+1)^2 - 1
-        let shDegree = Int(header.shDegree)
-        let additionalSHCoefficients = shDegree > 0 ? ((shDegree + 1) * (shDegree + 1)) - 1 : 0
-        let shSize = numPoints * additionalSHCoefficients * 3 // 3 color channels (RGB)
-        
-        let expectedSize = 16 + positionsSize + alphasSize + colorsSize + scalesSize + rotationsSize + shSize
+        let expectedSize = 16 + positionsSize + alphasSize + colorsSize + scalesSize + rotationsSize
         
         print("\n📊 Data Layout:")
         print("   Positions: \(positionsSize) bytes")
@@ -213,7 +204,6 @@ public class SPZParser {
         print("   Colors: \(colorsSize) bytes")
         print("   Scales: \(scalesSize) bytes")
         print("   Rotations: \(rotationsSize) bytes")
-        print("   SH Coefficients (degree \(shDegree)): \(shSize) bytes (\(additionalSHCoefficients) coeffs/point)")
         print("   Expected: \(expectedSize) bytes, Actual: \(data.count) bytes")
         
         guard data.count >= expectedSize else {
@@ -234,16 +224,6 @@ public class SPZParser {
         offset += scalesSize
         
         let rotationsData = data.subdata(in: offset..<(offset + rotationsSize))
-        offset += rotationsSize
-        
-        // Extract spherical harmonics data if present
-        let shData: Data?
-        if shSize > 0 {
-            shData = data.subdata(in: offset..<(offset + shSize))
-            offset += shSize
-        } else {
-            shData = nil
-        }
         
         print("\n⚙️  Processing splats...")
         
@@ -264,7 +244,6 @@ public class SPZParser {
             colors: colorsData,
             scales: scalesData,
             rotations: rotationsData,
-            sphericalHarmonics: shData,
             numPoints: numPoints,
             header: header
         )
@@ -321,7 +300,6 @@ public class SPZParser {
         colors: Data,
         scales: Data,
         rotations: Data,
-        sphericalHarmonics: Data?,
         numPoints: Int,
         header: GaussiansHeader
     ) throws -> [SplatData] {
@@ -373,60 +351,13 @@ public class SPZParser {
             
             let opacity = Float(alphas[i]) / 255.0
             
-            // === SPHERICAL HARMONICS (parse additional SH coefficients beyond degree 0) ===
-            var shCoefficients: [SIMD3<Float>] = []
-            
-            if let shData = sphericalHarmonics, header.shDegree > 0 {
-                let additionalSHCoefficients = ((Int(header.shDegree) + 1) * (Int(header.shDegree) + 1)) - 1
-                
-                if i == 0 {
-                    print("🌈 SPZ: Using Spherical Harmonics with \(additionalSHCoefficients + 1) coefficients (degree \(header.shDegree))")
-                    
-                    // Log first few coefficient values to check ranges
-                    let baseIdx = 0
-                    let rawR = Int8(bitPattern: shData[baseIdx])
-                    let rawG = Int8(bitPattern: shData[baseIdx + 1]) 
-                    let rawB = Int8(bitPattern: shData[baseIdx + 2])
-                    
-                    let firstCoeffR = Float(rawR) / 127.0
-                    let firstCoeffG = Float(rawG) / 127.0
-                    let firstCoeffB = Float(rawB) / 127.0
-                    print("📊 First SH coefficient (SH[1]) RGB: (\(String(format: "%.3f", firstCoeffR)), \(String(format: "%.3f", firstCoeffG)), \(String(format: "%.3f", firstCoeffB)))")
-                    print("📊 Raw SH bytes: (\(rawR), \(rawG), \(rawB))")
-                }
-                
-                // Each point has additionalSHCoefficients * 3 bytes (RGB for each coefficient)
-                let shOffset = i * additionalSHCoefficients * 3
-                
-                // Parse SH coefficients (8-bit signed integers)
-                for coeffIdx in 0..<additionalSHCoefficients {
-                    let baseIdx = shOffset + coeffIdx * 3
-                    
-                    // Convert 8-bit signed integers to floats (proper SPZ encoding)
-                    // SPZ uses signed 8-bit integers in range [-127, +127] mapped to [-1.0, +1.0]
-                    let r = Float(Int8(bitPattern: shData[baseIdx])) / 127.0
-                    let g = Float(Int8(bitPattern: shData[baseIdx + 1])) / 127.0
-                    let b = Float(Int8(bitPattern: shData[baseIdx + 2])) / 127.0
-                    
-                    shCoefficients.append(SIMD3<Float>(r, g, b))
-                }
-            } else if i == 0 {
-                print("📦 SPZ: Using basic color only (no spherical harmonics)")
-            }
-            
             // 🔍 DEBUG: Log first 3 splats for validation (reduced logging)
-            if i < 3 {
+            if i < 10 {
                 print("\n🔍 SPZ Splat \(i) Raw Data:")
                 print("   Position: (\(String(format: "%.4f", x)), \(String(format: "%.4f", y)), \(String(format: "%.4f", z)))")
-                print("   Base Color (SH[0]): (\(String(format: "%.3f", color.x)), \(String(format: "%.3f", color.y)), \(String(format: "%.3f", color.z)))")
+                print("   Color: (\(String(format: "%.3f", color.x)), \(String(format: "%.3f", color.y)), \(String(format: "%.3f", color.z)))")
                 print("   Opacity: \(String(format: "%.3f", opacity))")
                 print("   Scale: (\(String(format: "%.4f", scale.x)), \(String(format: "%.4f", scale.y)), \(String(format: "%.4f", scale.z)))")
-                if !shCoefficients.isEmpty {
-                    print("   Additional SH Coefficients (\(shCoefficients.count)):")
-                    for (idx, coeff) in shCoefficients.prefix(5).enumerated() {
-                        print("     SH[\(idx+1)]: (\(String(format: "%.3f", coeff.x)), \(String(format: "%.3f", coeff.y)), \(String(format: "%.3f", coeff.z)))")
-                    }
-                }
             }
             
             // Create simple splat (no packing!)
@@ -436,7 +367,6 @@ public class SPZParser {
                 scale: scale,
                 color: color,
                 opacity: opacity,
-                sphericalHarmonics: shCoefficients,
                 depth: 0
             )
             
@@ -584,47 +514,11 @@ public class SPZParser {
 // MARK: - Extension for SplatScenePoint Conversion
 
 extension SPZParser.SplatData {
-    private static var conversionCount = 0
-    
     public func toSplatScenePoint() -> SplatScenePoint {
-        // Create proper spherical harmonics color representation
-        let splatColor: SplatScenePoint.Color
-        
-        if sphericalHarmonics.isEmpty {
-            // No additional SH coefficients - use basic linear color (SH degree 0 only)
-            splatColor = .linearFloat(self.color)
-        } else {
-            // Combine SH[0] (base color) with additional SH coefficients
-            var allSHCoefficients = [self.color]  // SH[0] from color field
-            allSHCoefficients.append(contentsOf: sphericalHarmonics)  // SH[1-15] from additional data
-            splatColor = .sphericalHarmonic(allSHCoefficients)
-            
-            // Print random 100 samples of SH values for analysis
-            Self.conversionCount += 1
-            if Self.conversionCount <= 100 {
-                print("🔬 SH Sample #\(Self.conversionCount):")
-                print("   Position: (\(String(format: "%.2f", self.position.x)), \(String(format: "%.2f", self.position.y)), \(String(format: "%.2f", self.position.z)))")
-                print("   Base color: (\(String(format: "%.3f", self.color.x)), \(String(format: "%.3f", self.color.y)), \(String(format: "%.3f", self.color.z)))")
-                
-                // Print first few additional SH coefficients
-                for (idx, coeff) in sphericalHarmonics.prefix(5).enumerated() {
-                    print("   SH[\(idx+1)]: (\(String(format: "%.3f", coeff.x)), \(String(format: "%.3f", coeff.y)), \(String(format: "%.3f", coeff.z)))")
-                }
-                
-                // Calculate value ranges for analysis
-                let sh1Values = sphericalHarmonics.prefix(5).flatMap { [$0.x, $0.y, $0.z] }
-                if !sh1Values.isEmpty {
-                    let minVal = sh1Values.min() ?? 0
-                    let maxVal = sh1Values.max() ?? 0
-                    print("   SH[1-5] range: [\(String(format: "%.3f", minVal)), \(String(format: "%.3f", maxVal))]")
-                }
-                print("")
-            }
-        }
-        
+        // Use original anisotropic scale instead of uniform scale
         return SplatScenePoint(
             position: self.position,
-            color: splatColor,  // Now includes full SH coefficient array
+            color: .linearFloat(self.color),  // SPZ color is already in 0-1 range
             opacity: .linearFloat(self.opacity),  // SPZ opacity is already in 0-1 range
             scale: .linearFloat(self.scale),  // Use original anisotropic scale
             rotation: rotation,  // Use the rotation quaternion directly
