@@ -52,7 +52,8 @@ private class SplatPLYSceneReaderStream {
                                                 color: .linearUInt8(.zero),
                                                 opacity: .linearFloat(.zero),
                                                 scale: .exponent(.zero),
-                                                rotation: .init(vector: .zero))
+                                                rotation: .init(vector: .zero),
+                                                sourceCapabilities: StandardFormatCapabilities.plyBasic)
 
     func read(_ ply: PLYReader, to delegate: SplatSceneReaderDelegate) {
         self.delegate = delegate
@@ -150,6 +151,9 @@ private struct ElementInputMapping {
     let rotation1PropertyIndex: Int
     let rotation2PropertyIndex: Int
     let rotation3PropertyIndex: Int
+    
+    /// Format capabilities determined from PLY header
+    let formatCapabilities: SplatFormatCapabilities
 
     static func elementMapping(for header: PLYHeader) throws -> ElementInputMapping {
         guard let elementTypeIndex = header.index(forElementNamed: SplatPLYConstants.ElementName.point.rawValue) else {
@@ -208,6 +212,31 @@ private struct ElementInputMapping {
         let rotation2PropertyIndex = try headerElement.index(forFloat32PropertyNamed: SplatPLYConstants.PropertyName.rotation2)
         let rotation3PropertyIndex = try headerElement.index(forFloat32PropertyNamed: SplatPLYConstants.PropertyName.rotation3)
 
+        // Determine format capabilities based on detected color format
+        let formatCapabilities: SplatFormatCapabilities
+        switch color {
+        case .sphericalHarmonic(let shIndices):
+            // Calculate SH degree from number of coefficients
+            // SH degree 0 = 1 coeff, degree 1 = 4 coeffs, degree 2 = 9 coeffs, degree 3 = 16 coeffs
+            let coeffCount = shIndices.count
+            let shDegree: Int
+            if coeffCount == 1 {
+                shDegree = 0
+            } else if coeffCount == 4 {
+                shDegree = 1
+            } else if coeffCount == 9 {
+                shDegree = 2
+            } else if coeffCount == 16 {
+                shDegree = 3
+            } else {
+                // For other counts, calculate degree (n+1)² = coeffCount
+                shDegree = max(0, Int(sqrt(Double(coeffCount))) - 1)
+            }
+            formatCapabilities = StandardFormatCapabilities.plyWithSH(degree: shDegree)
+        case .linearFloat256, .linearUInt8:
+            formatCapabilities = StandardFormatCapabilities.plyBasic
+        }
+
         return ElementInputMapping(elementTypeIndex: elementTypeIndex,
                                    positionXPropertyIndex: positionXPropertyIndex,
                                    positionYPropertyIndex: positionYPropertyIndex,
@@ -220,13 +249,17 @@ private struct ElementInputMapping {
                                    rotation0PropertyIndex: rotation0PropertyIndex,
                                    rotation1PropertyIndex: rotation1PropertyIndex,
                                    rotation2PropertyIndex: rotation2PropertyIndex,
-                                   rotation3PropertyIndex: rotation3PropertyIndex)
+                                   rotation3PropertyIndex: rotation3PropertyIndex,
+                                   formatCapabilities: formatCapabilities)
     }
 
     func apply(from element: PLYElement, to result: inout SplatScenePoint) throws {
         result.position = SIMD3(x: try element.float32Value(forPropertyIndex: positionXPropertyIndex),
                                 y: try element.float32Value(forPropertyIndex: positionYPropertyIndex),
                                 z: try element.float32Value(forPropertyIndex: positionZPropertyIndex))
+        
+        // Update source capabilities based on detected format
+        result.sourceCapabilities = formatCapabilities
 
         switch colorPropertyIndices {
         case .sphericalHarmonic(let sphericalHarmonicsPropertyIndices):

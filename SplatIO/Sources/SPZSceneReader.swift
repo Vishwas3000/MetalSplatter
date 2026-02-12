@@ -16,8 +16,11 @@ public class SPZSceneReader {
         
         print("✅ Parsed \(parseResult.splats.count) splats from SPZ")
         
-        // Convert to SplatScenePoint array
-        let splatScenePoints = parseResult.splats.map { $0.toSplatScenePoint() }
+        // Create format capabilities based on the parsed header
+        let capabilities = StandardFormatCapabilities.spz(degree: Int(parseResult.header.shDegree))
+        
+        // Convert to SplatScenePoint array with capabilities
+        let splatScenePoints = parseResult.splats.map { $0.toSplatScenePoint(with: capabilities) }
         
         return splatScenePoints
     }

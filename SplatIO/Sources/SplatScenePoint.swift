@@ -1,6 +1,12 @@
 import Foundation
 import simd
 
+/// Enum representing the color format for rendering
+public enum RenderingColor {
+    case basicRGB(SIMD3<Float>)                    // Simple RGB color for basic rendering
+    case sphericalHarmonics([SIMD3<Float>])        // Full SH coefficients for advanced rendering
+}
+
 public struct SplatScenePoint {
     public enum Color {
         static let SH_C0: Float = 0.28209479177387814
@@ -71,6 +77,23 @@ public struct SplatScenePoint {
                 value.asUInt8
             case let .linearUInt8(value):
                 value
+            }
+        }
+        
+        /// Check if this color has meaningful spherical harmonics coefficients beyond the DC component
+        public var hasNonZeroSHCoefficients: Bool {
+            guard case let .sphericalHarmonic(coeffs) = self else { return false }
+            return coeffs.count > 1 && coeffs.dropFirst().contains { coeff in
+                abs(coeff.x) > 0.001 || abs(coeff.y) > 0.001 || abs(coeff.z) > 0.001
+            }
+        }
+        
+        /// Smart conversion that respects source format capabilities
+        public func asRenderingColor(for capabilities: SplatFormatCapabilities) -> RenderingColor {
+            if capabilities.supportsSphericalHarmonics && hasNonZeroSHCoefficients {
+                return .sphericalHarmonics(self.asSphericalHarmonic)
+            } else {
+                return .basicRGB(self.asLinearFloat)
             }
         }
     }
@@ -152,6 +175,9 @@ public struct SplatScenePoint {
     public var scale: Scale
     public var rotation: simd_quatf
     public var isSpz: Bool
+    
+    /// Format capabilities metadata for this splat point
+    public var sourceCapabilities: SplatFormatCapabilities
 
     public var covarianceMatrix: simd_float3x3 {
         let R = simd_float3x3(rotation)
@@ -164,12 +190,14 @@ public struct SplatScenePoint {
                 opacity: Opacity,
                 scale: Scale,
                 rotation: simd_quatf,
+                sourceCapabilities: SplatFormatCapabilities,
                 isSpz: Bool = false) {
         self.position = position
         self.color = color
         self.opacity = opacity
         self.scale = scale
         self.rotation = rotation
+        self.sourceCapabilities = sourceCapabilities
         self.isSpz = isSpz
     }
 
@@ -179,7 +207,18 @@ public struct SplatScenePoint {
                         opacity: .linearFloat(opacity.asLinearFloat),
                         scale: .linearFloat(scale.asLinearFloat),
                         rotation: rotation.normalized,
+                        sourceCapabilities: sourceCapabilities,
                         isSpz: isSpz)
+    }
+    
+    /// Whether this splat point has spherical harmonics data that should be used for rendering
+    public var hasSphericalHarmonics: Bool {
+        sourceCapabilities.supportsSphericalHarmonics && color.hasNonZeroSHCoefficients
+    }
+    
+    /// Whether this splat point's source format supports spherical harmonics (regardless of data content)
+    public var formatSupportsSphericalHarmonics: Bool {
+        sourceCapabilities.supportsSphericalHarmonics
     }
 }
 

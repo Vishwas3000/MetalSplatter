@@ -17,6 +17,32 @@ public struct SPZColorSettings {
 }
 
 public class SplatRenderer {
+    
+    /// Rendering mode for handling different splat formats
+    public enum RenderingMode {
+        case auto                    // Automatically detect from data
+        case forceBasicColor        // Force basic color even if SH data exists
+        case forceSphericalHarmonics // Force SH rendering (error if not available)
+    }
+    
+    /// Current rendering mode
+    public var renderingMode: RenderingMode = .auto
+    
+    /// Whether current loaded data supports spherical harmonics
+    private var dataSupportsSphericalHarmonics: Bool = false
+    
+    /// Whether to use SH shaders based on current data and settings
+    private var useSHRendering: Bool {
+        switch renderingMode {
+        case .auto:
+            return dataSupportsSphericalHarmonics
+        case .forceBasicColor:
+            return false
+        case .forceSphericalHarmonics:
+            assert(dataSupportsSphericalHarmonics, "SH rendering forced but no SH data available")
+            return dataSupportsSphericalHarmonics
+        }
+    }
     enum Constants {
         // Keep in sync with Shaders.metal : maxViewCount
         static let maxViewCount = 2
@@ -401,6 +427,10 @@ public class SplatRenderer {
 
     public func add(_ points: [SplatScenePoint]) throws {
         print("adding points: \(points.count)")
+        
+        // Detect spherical harmonics capabilities
+        updateSHCapabilities(for: points)
+        
         do {
             try ensureAdditionalCapacity(points.count)
         } catch {
@@ -409,6 +439,26 @@ public class SplatRenderer {
         }
 
         splatBuffer.append(points.map { Splat($0) })
+    }
+    
+    /// Update SH capabilities based on loaded point data
+    private func updateSHCapabilities(for points: [SplatScenePoint]) {
+        let hasSHData = points.contains { $0.hasSphericalHarmonics }
+        let formatSupportsSH = points.contains { $0.formatSupportsSphericalHarmonics }
+        
+        // Update SH support status
+        if hasSHData || formatSupportsSH {
+            dataSupportsSphericalHarmonics = true
+            
+            // Log SH detection for debugging
+            let shSplatsCount = points.filter { $0.hasSphericalHarmonics }.count
+            let shPercentage = Float(shSplatsCount) / Float(points.count) * 100
+            
+            Self.log.info("SH capabilities detected: \(shSplatsCount)/\(points.count) splats (\(String(format: "%.1f", shPercentage))%) have SH data")
+//            Self.log.info("Rendering mode: \(renderingMode), Will use SH shaders: \(useSHRendering)")
+        } else {
+            Self.log.info("No spherical harmonics data detected, using basic color rendering")
+        }
     }
 
     public func add(_ point: SplatScenePoint) throws {
@@ -660,23 +710,34 @@ public class SplatRenderer {
         let brightness = SPZColorSettings.brightness
         let gamma = SPZColorSettings.gamma
         return SIMD3<Float>(
-            min(1.0, pow(color.x, gamma) * brightness),
-            min(1.0, pow(color.y, gamma) * brightness),
-            min(1.0, pow(color.z, gamma) * brightness)
+            min(1.0, color.x),
+            min(1.0, color.y),
+            min(1.0, color.z)
         )
+//        return SIMD3<Float>(
+//            min(1.0, pow(color.x, gamma) * brightness),
+//            min(1.0, pow(color.y, gamma) * brightness),
+//            min(1.0, pow(color.z, gamma) * brightness)
+//        )
     }
 }
 
 extension SplatRenderer.Splat {
     init(_ splat: SplatScenePoint) {
-        // Handle SPZ vs PLY color processing differently
-        var colorRGB = splat.color.asLinearFloat
-        if splat.isSpz {
-            // SPZ: Apply SPZ-specific color correction (configurable)
-            colorRGB = SplatRenderer.applySPZColorCorrection(colorRGB)
-        } else {
-            // PLY/SPLAT: Apply standard sRGB to linear conversion
-            colorRGB = colorRGB.sRGBToLinear
+        // Handle color processing based on source format capabilities
+        var colorRGB: SIMD3<Float>
+        
+        // Use appropriate color conversion based on format
+        switch splat.sourceCapabilities.formatName {
+        case let name where name.contains(".spz"):
+            // SPZ files: Use configured color correction
+            colorRGB = SplatRenderer.applySPZColorCorrection(splat.color.asLinearFloat)
+        case let name where name.contains(".splat"):
+            // .splat files: Apply sRGB to linear conversion
+            colorRGB = splat.color.asLinearFloat.sRGBToLinear
+        default:
+            // PLY files and others: Use linear color directly
+            colorRGB = splat.color.asLinearFloat
         }
         
         self.init(position: splat.position,

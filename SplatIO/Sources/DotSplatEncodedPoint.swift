@@ -58,16 +58,18 @@ extension DotSplatEncodedPoint {
     var splatScenePoint: SplatScenePoint {
         SplatScenePoint(position: position,
                         color: .linearUInt8(color.xyz),
-                        opacity: .linearUInt8(color.w),
+                        opacity: SplatScenePoint.Opacity.linearUInt8(color.w),
                         scale: .linearFloat(scales),
                         rotation: simd_quatf(ix: Float(rot[1]) - 128,
                                              iy: Float(rot[2]) - 128,
                                              iz: Float(rot[3]) - 128,
-                                             r: Float(rot[0]) - 128).normalized)
+                                             r: Float(rot[0]) - 128).normalized,
+                        sourceCapabilities: StandardFormatCapabilities.dotSplat)
     }
 
     init(_ splatScenePoint: SplatScenePoint) {
         self.position = splatScenePoint.position
+        // For .splat files, we always convert to basic RGB (no SH support)
         let color = splatScenePoint.color.asLinearUInt8
         let opacity = splatScenePoint.opacity.asLinearUInt8
         self.color = .init(x: color.x, y: color.y, z: color.z, w: opacity)

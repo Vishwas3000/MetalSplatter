@@ -673,23 +673,30 @@ public class SPZParser {
 // MARK: - Extension for SplatScenePoint Conversion
 
 extension SPZParser.SplatData {
-    public func toSplatScenePoint() -> SplatScenePoint {
+    public func toSplatScenePoint(with capabilities: SplatFormatCapabilities) -> SplatScenePoint {
         // Convert spherical harmonics or use color directly
         let colorData: SplatScenePoint.Color
-        if sphericalHarmonics.isEmpty {
-            // No SH data, use direct color
-            colorData = .linearFloat(self.color)
-        } else {
-            // Use spherical harmonics
+        
+        // Check if we have meaningful spherical harmonics data
+        let hasNonZeroSH = sphericalHarmonics.count > 1 && sphericalHarmonics.dropFirst().contains { coeff in
+            abs(coeff.x) > 0.001 || abs(coeff.y) > 0.001 || abs(coeff.z) > 0.001
+        }
+        
+        if hasNonZeroSH {
+            // Use spherical harmonics when we have non-zero coefficients beyond DC
             colorData = .sphericalHarmonic(self.sphericalHarmonics)
+        } else {
+            // No meaningful SH data, use direct color
+            colorData = .linearFloat(self.color)
         }
         
         return SplatScenePoint(
             position: self.position,
-            color: .linearFloat(self.color),  // SPZ color is already in 0-1 range
+            color: colorData,  // Use spherical harmonics if present, otherwise linear color
             opacity: .linearFloat(self.opacity),  // SPZ opacity is already in 0-1 range
             scale: .linearFloat(self.scale),  // Use original anisotropic scale
             rotation: rotation,  // Use the rotation quaternion directly
+            sourceCapabilities: capabilities,
             isSpz: true
         )
     }
