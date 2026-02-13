@@ -239,7 +239,7 @@ public class SplatRenderer {
     }
 
     /// Current sorting algorithm (can be changed at runtime)
-    public var sortingAlgorithm: SortingAlgorithm = .gpuRadix
+    public var sortingAlgorithm: SortingAlgorithm = .gpuHybrid
 
     /// Benchmark results storage
     public struct SortBenchmarkResult {
@@ -402,7 +402,7 @@ public class SplatRenderer {
 
     /// Radix sort for float keys with associated indices
     /// Uses 4 passes (8 bits each) for O(4n) = O(n) complexity
-    /// Reuses pre-allocated buffers to avoid allocation overhead
+    /// Optimized with unsafe pointers to eliminate bounds checking overhead
     private func radixSortFloatIndices(
         depths: UnsafeMutablePointer<Float>,
         indices: UnsafeMutablePointer<UInt32>,
@@ -419,65 +419,75 @@ public class SplatRenderer {
             radixValsTemp = [UInt32](repeating: 0, count: count)
         }
 
-        // Convert floats to sortable uint32 keys
-        // IEEE 754 trick: flip all bits if negative, else flip sign bit
-        for i in 0..<count {
-            let floatBits = depths[i].bitPattern
-            // Make floats sortable as integers
-            if floatBits & 0x80000000 != 0 {
-                radixKeys[i] = ~floatBits  // Negative: flip all bits
-            } else {
-                radixKeys[i] = floatBits ^ 0x80000000  // Positive: flip sign bit
+        // Use withUnsafeMutableBufferPointer to eliminate bounds checking
+        radixKeys.withUnsafeMutableBufferPointer { keysBuf in
+            radixVals.withUnsafeMutableBufferPointer { valsBuf in
+                radixKeysTemp.withUnsafeMutableBufferPointer { keysTempBuf in
+                    radixValsTemp.withUnsafeMutableBufferPointer { valsTempBuf in
+                        var keysPtr = keysBuf.baseAddress!
+                        var valsPtr = valsBuf.baseAddress!
+                        var keysTempPtr = keysTempBuf.baseAddress!
+                        var valsTempPtr = valsTempBuf.baseAddress!
+
+                        // Convert floats to sortable uint32 keys (IEEE 754 trick)
+                        for i in 0..<count {
+                            let floatBits = depths[i].bitPattern
+                            if floatBits & 0x80000000 != 0 {
+                                keysPtr[i] = ~floatBits  // Negative: flip all bits
+                            } else {
+                                keysPtr[i] = floatBits ^ 0x80000000  // Positive: flip sign bit
+                            }
+                            valsPtr[i] = indices[i]
+                        }
+
+                        // 4 passes with 8-bit radix (256 buckets)
+                        var histogram = [Int](repeating: 0, count: 256)
+                        let radixMask: UInt32 = 255
+
+                        for pass in 0..<4 {
+                            let shift = pass * 8
+
+                            // Reset histogram using memset for speed
+                            histogram.withUnsafeMutableBufferPointer { histPtr in
+                                memset(histPtr.baseAddress!, 0, 256 * MemoryLayout<Int>.stride)
+                            }
+
+                            // Count histogram - use pointer arithmetic
+                            histogram.withUnsafeMutableBufferPointer { histPtr in
+                                let hPtr = histPtr.baseAddress!
+                                for i in 0..<count {
+                                    let digit = Int((keysPtr[i] >> shift) & radixMask)
+                                    hPtr[digit] += 1
+                                }
+
+                                // Prefix sum (exclusive scan)
+                                var sum = 0
+                                for i in 0..<256 {
+                                    let temp = hPtr[i]
+                                    hPtr[i] = sum
+                                    sum += temp
+                                }
+
+                                // Scatter to temp buffers
+                                for i in 0..<count {
+                                    let digit = Int((keysPtr[i] >> shift) & radixMask)
+                                    let destIdx = hPtr[digit]
+                                    keysTempPtr[destIdx] = keysPtr[i]
+                                    valsTempPtr[destIdx] = valsPtr[i]
+                                    hPtr[digit] += 1
+                                }
+                            }
+
+                            // Swap pointers (no data movement!)
+                            swap(&keysPtr, &keysTempPtr)
+                            swap(&valsPtr, &valsTempPtr)
+                        }
+
+                        // Copy sorted indices to output
+                        memcpy(output, valsPtr, count * MemoryLayout<UInt32>.stride)
+                    }
+                }
             }
-            radixVals[i] = indices[i]
-        }
-
-        // 4 passes, 8 bits each (256 buckets per pass)
-        let radixBits = 8
-        let radixSize = 1 << radixBits  // 256
-        let radixMask = UInt32(radixSize - 1)
-
-        // Histogram (stack allocated - fast)
-        var histogram = [Int](repeating: 0, count: radixSize)
-
-        for pass in 0..<4 {
-            let shift = pass * radixBits
-
-            // Reset histogram
-            for i in 0..<radixSize { histogram[i] = 0 }
-
-            // Count histogram
-            for i in 0..<count {
-                let digit = Int((radixKeys[i] >> shift) & radixMask)
-                histogram[digit] += 1
-            }
-
-            // Prefix sum (exclusive scan)
-            var sum = 0
-            for i in 0..<radixSize {
-                let temp = histogram[i]
-                histogram[i] = sum
-                sum += temp
-            }
-
-            // Scatter
-            for i in 0..<count {
-                let digit = Int((radixKeys[i] >> shift) & radixMask)
-                let destIdx = histogram[digit]
-                radixKeysTemp[destIdx] = radixKeys[i]
-                radixValsTemp[destIdx] = radixVals[i]
-                histogram[digit] += 1
-            }
-
-            // Swap buffers (just swap pointers, not data)
-            swap(&radixKeys, &radixKeysTemp)
-            swap(&radixVals, &radixValsTemp)
-        }
-
-        // Copy result to output (ascending on transformed keys = descending on original negated depths)
-        // IEEE 754 trick with negated depths: far splats get smaller transformed keys, so they come first
-        radixVals.withUnsafeBufferPointer { buffer in
-            memcpy(output, buffer.baseAddress!, count * MemoryLayout<UInt32>.stride)
         }
     }
 
