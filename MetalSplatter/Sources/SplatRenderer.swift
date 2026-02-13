@@ -1,10 +1,12 @@
 import Foundation
 import Metal
 import MetalKit
+import MetalPerformanceShaders
 import os
 import SplatIO
 import simd
 import zlib
+import Accelerate
 
 #if arch(x86_64)
 typealias Float16 = Float
@@ -224,6 +226,78 @@ public class SplatRenderer {
     var sorting = false
     var orderAndDepthTempSort: [SplatIndexAndDepth] = []
 
+    // ========================================================================
+    // SORTING CONFIGURATION
+    // ========================================================================
+
+    /// Available sorting algorithms
+    public enum SortingAlgorithm: String, CaseIterable {
+        case cpuStandard = "CPU Standard Sort"      // Swift's built-in sort
+        case gpuHybrid = "GPU Hybrid"               // GPU depth + CPU sort + GPU reorder
+        case gpuBitonic = "GPU Bitonic Sort"        // Full GPU bitonic sort
+        case gpuRadix = "GPU Radix Sort"            // Full GPU radix sort (experimental)
+    }
+
+    /// Current sorting algorithm (can be changed at runtime)
+    public var sortingAlgorithm: SortingAlgorithm = .gpuRadix
+
+    /// Benchmark results storage
+    public struct SortBenchmarkResult {
+        public let algorithm: SortingAlgorithm
+        public let splatCount: Int
+        public let depthComputeTime: TimeInterval    // Time to compute depths
+        public let sortTime: TimeInterval            // Time for actual sorting
+        public let reorderTime: TimeInterval         // Time to reorder splats
+        public let totalTime: TimeInterval           // Total time
+
+        public var description: String {
+            String(format: "%@ (%d splats): depth=%.2fms, sort=%.2fms, reorder=%.2fms, total=%.2fms",
+                   algorithm.rawValue, splatCount,
+                   depthComputeTime * 1000, sortTime * 1000,
+                   reorderTime * 1000, totalTime * 1000)
+        }
+    }
+
+    /// Last benchmark result (updated after each sort if benchmarking is enabled)
+    public private(set) var lastBenchmarkResult: SortBenchmarkResult?
+
+    /// Enable detailed timing for benchmarking (slight performance overhead)
+    public var enableSortBenchmarking = false
+
+    // GPU Sorting resources
+    public var useGPUSorting = true  // Enable GPU-based sorting by default
+    private var depthBuffer: MTLBuffer?
+    private var indexBufferForSort: MTLBuffer?
+    private var sortedIndexBuffer: MTLBuffer?
+    private var depthComputePipeline: MTLComputePipelineState?
+    private var reorderPipeline: MTLComputePipelineState?
+    private var bitonicSortPipeline: MTLComputePipelineState?
+    private var bitonicSortLocalPipeline: MTLComputePipelineState?
+    private var commandQueue: MTLCommandQueue?
+    private var lastSortedSplatCount: Int = 0
+
+    // Radix sort reusable buffers (avoid allocation every frame)
+    private var radixKeys: [UInt32] = []
+    private var radixVals: [UInt32] = []
+    private var radixKeysTemp: [UInt32] = []
+    private var radixValsTemp: [UInt32] = []
+
+    // Uniforms for depth computation kernel
+    struct DepthComputeUniforms {
+        var cameraPosition: SIMD3<Float>
+        var cameraForward: SIMD3<Float>
+        var splatCount: UInt32
+        var sortByDistance: Bool
+    }
+
+    // Uniforms for sorting kernels
+    struct SortUniforms {
+        var count: UInt32
+        var stageDistance: UInt32
+        var passDistance: UInt32
+        var ascending: UInt32
+    }
+
     public init(device: MTLDevice,
                 colorFormat: MTLPixelFormat,
                 depthFormat: MTLPixelFormat,
@@ -256,6 +330,154 @@ public class SplatRenderer {
             library = try device.makeDefaultLibrary(bundle: Bundle.module)
         } catch {
             fatalError("Unable to initialize SplatRenderer: \(error)")
+        }
+
+        // Initialize GPU sorting infrastructure
+        self.commandQueue = device.makeCommandQueue()
+        setupGPUSortingPipelines()
+    }
+
+    private func setupGPUSortingPipelines() {
+        do {
+            // Create compute pipeline for depth computation
+            if let depthFunction = library.makeFunction(name: "computeSplatDepthsDescending") {
+                depthComputePipeline = try device.makeComputePipelineState(function: depthFunction)
+            }
+            // Create compute pipeline for reordering splats
+            if let reorderFunction = library.makeFunction(name: "reorderSplats") {
+                reorderPipeline = try device.makeComputePipelineState(function: reorderFunction)
+            }
+            // Create compute pipeline for bitonic sort
+            if let bitonicFunction = library.makeFunction(name: "bitonicSortPass") {
+                bitonicSortPipeline = try device.makeComputePipelineState(function: bitonicFunction)
+            }
+            // Create compute pipeline for local bitonic sort
+            if let bitonicLocalFunction = library.makeFunction(name: "bitonicSortLocal") {
+                bitonicSortLocalPipeline = try device.makeComputePipelineState(function: bitonicLocalFunction)
+            }
+        } catch {
+            Self.log.error("Failed to create GPU sorting pipelines: \(error.localizedDescription)")
+            useGPUSorting = false
+        }
+    }
+
+    /// Returns the next power of 2 >= n
+    private func nextPowerOf2(_ n: Int) -> Int {
+        guard n > 0 else { return 1 }
+        var v = n - 1
+        v |= v >> 1
+        v |= v >> 2
+        v |= v >> 4
+        v |= v >> 8
+        v |= v >> 16
+        return v + 1
+    }
+
+    private func ensureGPUSortBuffers(splatCount: Int) {
+        guard splatCount > 0 else { return }
+
+        // For bitonic sort, we need power-of-2 sized buffers
+        let paddedCount = nextPowerOf2(splatCount)
+        let depthBufferSize = MemoryLayout<Float>.stride * paddedCount
+        let indexBufferSize = MemoryLayout<UInt32>.stride * paddedCount
+
+        // Reallocate if needed
+        if depthBuffer == nil || depthBuffer!.length < depthBufferSize {
+            depthBuffer = device.makeBuffer(length: depthBufferSize, options: .storageModeShared)
+            depthBuffer?.label = "Depth Buffer for Sort"
+        }
+        if indexBufferForSort == nil || indexBufferForSort!.length < indexBufferSize {
+            indexBufferForSort = device.makeBuffer(length: indexBufferSize, options: .storageModeShared)
+            indexBufferForSort?.label = "Index Buffer for Sort (Input)"
+        }
+        if sortedIndexBuffer == nil || sortedIndexBuffer!.length < indexBufferSize {
+            sortedIndexBuffer = device.makeBuffer(length: indexBufferSize, options: .storageModeShared)
+            sortedIndexBuffer?.label = "Index Buffer for Sort (Output)"
+        }
+
+        lastSortedSplatCount = splatCount
+    }
+
+    // MARK: - Radix Sort Implementation (O(n) instead of O(n log n))
+
+    /// Radix sort for float keys with associated indices
+    /// Uses 4 passes (8 bits each) for O(4n) = O(n) complexity
+    /// Reuses pre-allocated buffers to avoid allocation overhead
+    private func radixSortFloatIndices(
+        depths: UnsafeMutablePointer<Float>,
+        indices: UnsafeMutablePointer<UInt32>,
+        output: UnsafeMutablePointer<UInt32>,
+        count: Int
+    ) {
+        guard count > 0 else { return }
+
+        // Ensure reusable buffers are large enough
+        if radixKeys.count < count {
+            radixKeys = [UInt32](repeating: 0, count: count)
+            radixVals = [UInt32](repeating: 0, count: count)
+            radixKeysTemp = [UInt32](repeating: 0, count: count)
+            radixValsTemp = [UInt32](repeating: 0, count: count)
+        }
+
+        // Convert floats to sortable uint32 keys
+        // IEEE 754 trick: flip all bits if negative, else flip sign bit
+        for i in 0..<count {
+            let floatBits = depths[i].bitPattern
+            // Make floats sortable as integers
+            if floatBits & 0x80000000 != 0 {
+                radixKeys[i] = ~floatBits  // Negative: flip all bits
+            } else {
+                radixKeys[i] = floatBits ^ 0x80000000  // Positive: flip sign bit
+            }
+            radixVals[i] = indices[i]
+        }
+
+        // 4 passes, 8 bits each (256 buckets per pass)
+        let radixBits = 8
+        let radixSize = 1 << radixBits  // 256
+        let radixMask = UInt32(radixSize - 1)
+
+        // Histogram (stack allocated - fast)
+        var histogram = [Int](repeating: 0, count: radixSize)
+
+        for pass in 0..<4 {
+            let shift = pass * radixBits
+
+            // Reset histogram
+            for i in 0..<radixSize { histogram[i] = 0 }
+
+            // Count histogram
+            for i in 0..<count {
+                let digit = Int((radixKeys[i] >> shift) & radixMask)
+                histogram[digit] += 1
+            }
+
+            // Prefix sum (exclusive scan)
+            var sum = 0
+            for i in 0..<radixSize {
+                let temp = histogram[i]
+                histogram[i] = sum
+                sum += temp
+            }
+
+            // Scatter
+            for i in 0..<count {
+                let digit = Int((radixKeys[i] >> shift) & radixMask)
+                let destIdx = histogram[digit]
+                radixKeysTemp[destIdx] = radixKeys[i]
+                radixValsTemp[destIdx] = radixVals[i]
+                histogram[digit] += 1
+            }
+
+            // Swap buffers (just swap pointers, not data)
+            swap(&radixKeys, &radixKeysTemp)
+            swap(&radixVals, &radixValsTemp)
+        }
+
+        // Copy result to output (ascending on transformed keys = descending on original negated depths)
+        // IEEE 754 trick with negated depths: far splats get smaller transformed keys, so they come first
+        radixVals.withUnsafeBufferPointer { buffer in
+            memcpy(output, buffer.baseAddress!, count * MemoryLayout<UInt32>.stride)
         }
     }
 
@@ -655,6 +877,520 @@ public class SplatRenderer {
     // Sort splatBuffer (read-only), storing the results in splatBuffer (write-only) then swap splatBuffer and splatBufferPrime
     public func resort() {
         guard !sorting else { return }
+
+        // Dispatch to appropriate sorting algorithm
+        switch sortingAlgorithm {
+        case .cpuStandard:
+            cpuResort()
+        case .gpuHybrid:
+            if depthComputePipeline != nil && reorderPipeline != nil {
+                gpuHybridResort()
+            } else {
+                cpuResort()
+            }
+        case .gpuBitonic:
+            if depthComputePipeline != nil && bitonicSortPipeline != nil && reorderPipeline != nil {
+                gpuBitonicResort()
+            } else {
+                cpuResort()
+            }
+        case .gpuRadix:
+            // Radix sort is experimental, fall back to bitonic for now
+            if depthComputePipeline != nil && bitonicSortPipeline != nil && reorderPipeline != nil {
+                gpuBitonicResort()
+            } else {
+                cpuResort()
+            }
+        }
+    }
+
+    /// Benchmark all sorting algorithms and return results
+    /// - Parameter iterations: Number of iterations per algorithm for averaging
+    /// - Returns: Array of benchmark results for each algorithm
+    public func benchmarkSortingAlgorithms(iterations: Int = 5) async -> [SortBenchmarkResult] {
+        var results: [SortBenchmarkResult] = []
+        let originalAlgorithm = sortingAlgorithm
+        let originalBenchmarking = enableSortBenchmarking
+
+        enableSortBenchmarking = true
+
+        for algorithm in SortingAlgorithm.allCases {
+            sortingAlgorithm = algorithm
+
+            var totalTimes: [TimeInterval] = []
+
+            for _ in 0..<iterations {
+                let startTime = Date()
+
+                // Force a resort
+                sorting = false
+                resort()
+
+                // Wait for sort to complete
+                while sorting {
+                    try? await Task.sleep(nanoseconds: 1_000_000) // 1ms
+                }
+
+                let elapsed = -startTime.timeIntervalSinceNow
+                totalTimes.append(elapsed)
+            }
+
+            // Calculate average
+            let avgTime = totalTimes.reduce(0, +) / Double(iterations)
+
+            let result = SortBenchmarkResult(
+                algorithm: algorithm,
+                splatCount: splatBuffer.count,
+                depthComputeTime: 0,  // Would need more detailed timing
+                sortTime: avgTime,
+                reorderTime: 0,
+                totalTime: avgTime
+            )
+            results.append(result)
+
+            print("Benchmark: \(result.description)")
+        }
+
+        // Restore original settings
+        sortingAlgorithm = originalAlgorithm
+        enableSortBenchmarking = originalBenchmarking
+
+        return results
+    }
+
+    // ========================================================================
+    // SORTING VALIDATION
+    // ========================================================================
+
+    /// Validates that the sort produced correct results (depths in descending order = far to near)
+    /// Returns true if valid, false if there are sorting errors
+    public func validateSortOrder() -> (isValid: Bool, errors: Int, firstErrorIndex: Int?) {
+        let count = splatBuffer.count
+        guard count > 1 else { return (true, 0, nil) }
+
+        let cameraPos = cameraWorldPosition
+
+        var errors = 0
+        var firstErrorIndex: Int? = nil
+
+        for i in 0..<(count - 1) {
+            let pos1 = splatBuffer.values[i].position.simd
+            let pos2 = splatBuffer.values[i + 1].position.simd
+
+            let depth1 = (pos1 - cameraPos).lengthSquared
+            let depth2 = (pos2 - cameraPos).lengthSquared
+
+            // Should be far to near, so depth1 >= depth2
+            if depth1 < depth2 {
+                errors += 1
+                if firstErrorIndex == nil {
+                    firstErrorIndex = i
+                }
+            }
+        }
+
+        return (errors == 0, errors, firstErrorIndex)
+    }
+
+    /// Logs validation result
+    private func logValidation(algorithm: String) {
+        let (isValid, errors, firstError) = validateSortOrder()
+        if isValid {
+            print("✅ [\(algorithm)] Sort validation PASSED - all \(splatBuffer.count) splats correctly ordered")
+        } else {
+            print("❌ [\(algorithm)] Sort validation FAILED - \(errors) errors, first at index \(firstError ?? -1)")
+        }
+    }
+
+    // GPU-accelerated sorting: GPU depth computation + CPU sort + GPU reorder
+    // This hybrid approach is faster than pure CPU because:
+    // - Depth computation: O(n) parallel on GPU vs O(n) serial on CPU
+    // - Sort: O(n log n) on CPU but only sorting 8-byte structs (not 64-byte splats)
+    // - Reorder: O(n) parallel on GPU vs O(n) serial memory copies on CPU
+    private func gpuHybridResort() {
+        guard !sorting else { return }
+        sorting = true
+        onSortStart?()
+        let sortStartTime = Date()
+
+        let splatCount = splatBuffer.count
+        guard splatCount > 0,
+              let commandQueue = commandQueue,
+              let depthComputePipeline = depthComputePipeline,
+              let reorderPipeline = reorderPipeline else {
+            sorting = false
+            return
+        }
+
+        // Ensure buffers are allocated
+        ensureGPUSortBuffers(splatCount: splatCount)
+
+        guard let depthBuffer = depthBuffer,
+              let indexBufferForSort = indexBufferForSort,
+              let sortedIndexBuffer = sortedIndexBuffer else {
+            sorting = false
+            cpuResort()  // Fallback to CPU
+            return
+        }
+
+        // Capture camera state
+        let cameraPos = cameraWorldPosition
+        let cameraFwd = cameraWorldForward
+
+        Task(priority: .high) {
+            var depthComputeTime: TimeInterval = 0
+            var sortTime: TimeInterval = 0
+            var reorderTime: TimeInterval = 0
+
+            defer {
+                let totalTime = -sortStartTime.timeIntervalSinceNow
+                sorting = false
+                onSortComplete?(totalTime)
+
+                // Log timing
+                print("⏱️ [GPU Hybrid] Sorting \(splatCount) splats:")
+                print("   Depth compute: \(String(format: "%.2f", depthComputeTime * 1000))ms")
+                print("   CPU Sort:      \(String(format: "%.2f", sortTime * 1000))ms")
+                print("   GPU Reorder:   \(String(format: "%.2f", reorderTime * 1000))ms")
+                print("   TOTAL:         \(String(format: "%.2f", totalTime * 1000))ms")
+
+                if enableSortBenchmarking {
+                    logValidation(algorithm: "GPU Hybrid")
+                }
+            }
+
+            // Step 1: Compute depths on GPU (parallel)
+            let depthStart = Date()
+            guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
+            commandBuffer.label = "GPU Depth Computation"
+
+            if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                computeEncoder.label = "Depth Computation"
+                computeEncoder.setComputePipelineState(depthComputePipeline)
+
+                // Set buffers
+                computeEncoder.setBuffer(splatBuffer.buffer, offset: 0, index: 0)
+                computeEncoder.setBuffer(depthBuffer, offset: 0, index: 1)
+                computeEncoder.setBuffer(indexBufferForSort, offset: 0, index: 2)
+
+                // Set uniforms
+                var uniforms = DepthComputeUniforms(
+                    cameraPosition: cameraPos,
+                    cameraForward: cameraFwd,
+                    splatCount: UInt32(splatCount),
+                    sortByDistance: Constants.sortByDistance
+                )
+                computeEncoder.setBytes(&uniforms, length: MemoryLayout<DepthComputeUniforms>.stride, index: 3)
+
+                // Dispatch
+                let threadGroupSize = min(depthComputePipeline.maxTotalThreadsPerThreadgroup, 256)
+                let threadGroups = (splatCount + threadGroupSize - 1) / threadGroupSize
+                computeEncoder.dispatchThreadgroups(
+                    MTLSize(width: threadGroups, height: 1, depth: 1),
+                    threadsPerThreadgroup: MTLSize(width: threadGroupSize, height: 1, depth: 1)
+                )
+                computeEncoder.endEncoding()
+            }
+
+            commandBuffer.commit()
+            commandBuffer.waitUntilCompleted()
+            depthComputeTime = -depthStart.timeIntervalSinceNow
+
+            // Step 2: Sort on CPU using radix sort - O(n) instead of O(n log n)!
+            let sortStart = Date()
+            let depthPtr = depthBuffer.contents().bindMemory(to: Float.self, capacity: splatCount)
+            let indexPtr = indexBufferForSort.contents().bindMemory(to: UInt32.self, capacity: splatCount)
+            let sortedIndexPtr = sortedIndexBuffer.contents().bindMemory(to: UInt32.self, capacity: splatCount)
+
+            // Radix sort for floats: 4 passes (8 bits each) = O(4n) = O(n)
+            // Convert floats to sortable integers using IEEE 754 trick
+            radixSortFloatIndices(
+                depths: depthPtr,
+                indices: indexPtr,
+                output: sortedIndexPtr,
+                count: splatCount
+            )
+            sortTime = -sortStart.timeIntervalSinceNow
+
+            // Step 3: Reorder splats on GPU (parallel memory copies)
+            let reorderStart = Date()
+            do {
+                try splatBufferPrime.setCapacity(splatCount)
+                splatBufferPrime.count = splatCount
+            } catch {
+                return
+            }
+
+            guard let reorderBuffer = commandQueue.makeCommandBuffer() else { return }
+            reorderBuffer.label = "GPU Splat Reordering"
+
+            if let computeEncoder = reorderBuffer.makeComputeCommandEncoder() {
+                computeEncoder.label = "Splat Reordering"
+                computeEncoder.setComputePipelineState(reorderPipeline)
+
+                computeEncoder.setBuffer(splatBuffer.buffer, offset: 0, index: 0)
+                computeEncoder.setBuffer(splatBufferPrime.buffer, offset: 0, index: 1)
+                computeEncoder.setBuffer(sortedIndexBuffer, offset: 0, index: 2)
+
+                var count = UInt32(splatCount)
+                computeEncoder.setBytes(&count, length: MemoryLayout<UInt32>.stride, index: 3)
+
+                let threadGroupSize = min(reorderPipeline.maxTotalThreadsPerThreadgroup, 256)
+                let threadGroups = (splatCount + threadGroupSize - 1) / threadGroupSize
+                computeEncoder.dispatchThreadgroups(
+                    MTLSize(width: threadGroups, height: 1, depth: 1),
+                    threadsPerThreadgroup: MTLSize(width: threadGroupSize, height: 1, depth: 1)
+                )
+                computeEncoder.endEncoding()
+            }
+
+            reorderBuffer.commit()
+            reorderBuffer.waitUntilCompleted()
+            reorderTime = -reorderStart.timeIntervalSinceNow
+
+            // Swap buffers
+            swap(&splatBuffer, &splatBufferPrime)
+        }
+    }
+
+    // ========================================================================
+    // GPU BITONIC SORT - Fully parallel sorting on GPU
+    // ========================================================================
+    // Bitonic sort has O(n * log²n) comparisons but all comparisons in each
+    // pass are independent, making it highly parallel on GPU.
+    //
+    // For 100,000 splats: ~17 stages, ~153 passes total
+    // Each pass processes all elements in parallel
+    private func gpuBitonicResort() {
+        guard !sorting else { return }
+        sorting = true
+        onSortStart?()
+        let sortStartTime = Date()
+
+        let splatCount = splatBuffer.count
+        guard splatCount > 0,
+              let commandQueue = commandQueue,
+              let depthComputePipeline = depthComputePipeline,
+              let bitonicSortPipeline = bitonicSortPipeline,
+              let reorderPipeline = reorderPipeline else {
+            sorting = false
+            return
+        }
+
+        // Ensure buffers are allocated
+        ensureGPUSortBuffers(splatCount: splatCount)
+
+        guard let depthBuffer = depthBuffer,
+              let indexBufferForSort = indexBufferForSort,
+              let sortedIndexBuffer = sortedIndexBuffer else {
+            sorting = false
+            cpuResort()
+            return
+        }
+
+        let cameraPos = cameraWorldPosition
+        let cameraFwd = cameraWorldForward
+
+        // Calculate padded size once for the whole operation
+        let paddedCount = nextPowerOf2(splatCount)
+
+        Task(priority: .high) {
+            var depthComputeTime: TimeInterval = 0
+            var bitonicSortTime: TimeInterval = 0
+            var reorderTime: TimeInterval = 0
+            var totalPasses = 0
+
+            defer {
+                let totalTime = -sortStartTime.timeIntervalSinceNow
+                sorting = false
+                onSortComplete?(totalTime)
+
+                // Log timing
+                let numStages = Int(log2(Double(paddedCount)))
+                print("⏱️ [GPU Bitonic] Sorting \(splatCount) splats (padded to \(paddedCount), \(numStages) stages, \(totalPasses) passes):")
+                print("   Depth compute:  \(String(format: "%.2f", depthComputeTime * 1000))ms")
+                print("   Bitonic sort:   \(String(format: "%.2f", bitonicSortTime * 1000))ms")
+                print("   GPU Reorder:    \(String(format: "%.2f", reorderTime * 1000))ms")
+                print("   TOTAL:          \(String(format: "%.2f", totalTime * 1000))ms")
+
+                // Always validate bitonic sort to ensure correctness
+                logValidation(algorithm: "GPU Bitonic")
+            }
+
+            // Step 1: Compute depths on GPU
+            let depthStart = Date()
+            guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
+            commandBuffer.label = "GPU Bitonic Sort - Depth Computation"
+
+            if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                computeEncoder.label = "Depth Computation"
+                computeEncoder.setComputePipelineState(depthComputePipeline)
+
+                computeEncoder.setBuffer(splatBuffer.buffer, offset: 0, index: 0)
+                computeEncoder.setBuffer(depthBuffer, offset: 0, index: 1)
+                computeEncoder.setBuffer(indexBufferForSort, offset: 0, index: 2)
+
+                var uniforms = DepthComputeUniforms(
+                    cameraPosition: cameraPos,
+                    cameraForward: cameraFwd,
+                    splatCount: UInt32(splatCount),
+                    sortByDistance: Constants.sortByDistance
+                )
+                computeEncoder.setBytes(&uniforms, length: MemoryLayout<DepthComputeUniforms>.stride, index: 3)
+
+                let threadGroupSize = min(depthComputePipeline.maxTotalThreadsPerThreadgroup, 256)
+                let threadGroups = (splatCount + threadGroupSize - 1) / threadGroupSize
+                computeEncoder.dispatchThreadgroups(
+                    MTLSize(width: threadGroups, height: 1, depth: 1),
+                    threadsPerThreadgroup: MTLSize(width: threadGroupSize, height: 1, depth: 1)
+                )
+                computeEncoder.endEncoding()
+            }
+
+            commandBuffer.commit()
+            commandBuffer.waitUntilCompleted()
+            depthComputeTime = -depthStart.timeIntervalSinceNow
+
+            // Step 2: Bitonic Sort on GPU
+            // Bitonic sort requires power-of-2 array size (paddedCount already calculated)
+            let sortStart = Date()
+            let numStages = Int(log2(Double(paddedCount)))
+
+            // Initialize padding elements with +∞ depth (so they sort to the end)
+            // OPTIMIZED: Use memset-style initialization instead of loop
+            let depthPtr = depthBuffer.contents().bindMemory(to: Float.self, capacity: paddedCount)
+            let indexPtr = indexBufferForSort.contents().bindMemory(to: UInt32.self, capacity: paddedCount)
+            let paddingCount = paddedCount - splatCount
+            if paddingCount > 0 {
+                // Fill padding depths with infinity using fast memory operations
+                let paddingDepthPtr = depthPtr.advanced(by: splatCount)
+                let paddingIndexPtr = indexPtr.advanced(by: splatCount)
+
+                // Use vDSP for fast fill if available, otherwise stride-based fill
+                let infValue = Float.infinity
+                vDSP_vfill([infValue], paddingDepthPtr, 1, vDSP_Length(paddingCount))
+
+                // Fill indices with sequential values starting from splatCount
+                for i in 0..<paddingCount {
+                    paddingIndexPtr[i] = UInt32(splatCount + i)
+                }
+            }
+
+            // Run bitonic sort on the full padded array
+            // Optimization: batch multiple passes per command buffer to reduce overhead
+            // Each pass needs a memory barrier, but we can batch passes that don't conflict
+            let passesPerBatch = 10  // Commit every 10 passes to balance overhead vs latency
+            var passesInCurrentBatch = 0
+            var currentCommandBuffer: MTLCommandBuffer?
+            let threadGroupSize = min(bitonicSortPipeline.maxTotalThreadsPerThreadgroup, 256)
+            let threadGroups = (paddedCount + threadGroupSize - 1) / threadGroupSize
+
+            for stage in 1...numStages {
+                let stageDistance = UInt32(1 << stage)
+
+                // Each stage has 'stage' number of passes
+                for pass in stride(from: stage, through: 1, by: -1) {
+                    let passDistance = UInt32(1 << (pass - 1))
+                    totalPasses += 1
+
+                    // Start a new command buffer if needed
+                    if currentCommandBuffer == nil {
+                        currentCommandBuffer = commandQueue.makeCommandBuffer()
+                        currentCommandBuffer?.label = "Bitonic Sort Batch"
+                        passesInCurrentBatch = 0
+                    }
+
+                    guard let sortBuffer = currentCommandBuffer else { return }
+
+                    // Each pass needs its own compute encoder for proper synchronization
+                    if let computeEncoder = sortBuffer.makeComputeCommandEncoder() {
+                        computeEncoder.setComputePipelineState(bitonicSortPipeline)
+
+                        computeEncoder.setBuffer(depthBuffer, offset: 0, index: 0)
+                        computeEncoder.setBuffer(indexBufferForSort, offset: 0, index: 1)
+
+                        // Use paddedCount for sorting, so all elements participate
+                        var sortUniforms = SortUniforms(
+                            count: UInt32(paddedCount),  // Use padded count!
+                            stageDistance: stageDistance,
+                            passDistance: passDistance,
+                            ascending: 1  // Ascending sort (depths are negated for far-to-near)
+                        )
+                        computeEncoder.setBytes(&sortUniforms, length: MemoryLayout<SortUniforms>.stride, index: 2)
+
+                        computeEncoder.dispatchThreadgroups(
+                            MTLSize(width: threadGroups, height: 1, depth: 1),
+                            threadsPerThreadgroup: MTLSize(width: threadGroupSize, height: 1, depth: 1)
+                        )
+                        computeEncoder.endEncoding()
+                    }
+
+                    passesInCurrentBatch += 1
+
+                    // Commit batch when full or at end of all passes
+                    let isLastPass = (stage == numStages && pass == 1)
+                    if passesInCurrentBatch >= passesPerBatch || isLastPass {
+                        sortBuffer.commit()
+                        sortBuffer.waitUntilCompleted()
+                        currentCommandBuffer = nil
+                    }
+                }
+            }
+            bitonicSortTime = -sortStart.timeIntervalSinceNow
+
+            // Copy sorted indices to output buffer
+            // OPTIMIZED: Since padding depths are +∞, they sort to the END
+            // So the first splatCount indices are guaranteed to be valid - use direct memcpy!
+            let sortedIndexPtr = indexBufferForSort.contents()
+            let dstPtr = sortedIndexBuffer.contents()
+
+            // Direct memory copy - much faster than element-by-element loop
+            memcpy(dstPtr, sortedIndexPtr, splatCount * MemoryLayout<UInt32>.stride)
+
+            // Step 3: Reorder splats based on sorted indices
+            let reorderStart = Date()
+            do {
+                try splatBufferPrime.setCapacity(splatCount)
+                splatBufferPrime.count = splatCount
+            } catch {
+                return
+            }
+
+            guard let reorderBuffer = commandQueue.makeCommandBuffer() else { return }
+            reorderBuffer.label = "GPU Splat Reordering"
+
+            if let computeEncoder = reorderBuffer.makeComputeCommandEncoder() {
+                computeEncoder.label = "Splat Reordering"
+                computeEncoder.setComputePipelineState(reorderPipeline)
+
+                computeEncoder.setBuffer(splatBuffer.buffer, offset: 0, index: 0)
+                computeEncoder.setBuffer(splatBufferPrime.buffer, offset: 0, index: 1)
+                computeEncoder.setBuffer(sortedIndexBuffer, offset: 0, index: 2)
+
+                var count = UInt32(splatCount)
+                computeEncoder.setBytes(&count, length: MemoryLayout<UInt32>.stride, index: 3)
+
+                let threadGroupSize = min(reorderPipeline.maxTotalThreadsPerThreadgroup, 256)
+                let threadGroups = (splatCount + threadGroupSize - 1) / threadGroupSize
+                computeEncoder.dispatchThreadgroups(
+                    MTLSize(width: threadGroups, height: 1, depth: 1),
+                    threadsPerThreadgroup: MTLSize(width: threadGroupSize, height: 1, depth: 1)
+                )
+                computeEncoder.endEncoding()
+            }
+
+            reorderBuffer.commit()
+            reorderBuffer.waitUntilCompleted()
+            reorderTime = -reorderStart.timeIntervalSinceNow
+
+            // Swap buffers
+            swap(&splatBuffer, &splatBufferPrime)
+        }
+    }
+
+    // Original CPU-based sorting (fallback)
+    private func cpuResort() {
+        guard !sorting else { return }
         sorting = true
         onSortStart?()
         let sortStartTime = Date()
@@ -665,11 +1401,29 @@ public class SplatRenderer {
         let cameraWorldPosition = cameraWorldPosition
 
         Task(priority: .high) {
+            var depthComputeTime: TimeInterval = 0
+            var sortTime: TimeInterval = 0
+            var reorderTime: TimeInterval = 0
+
             defer {
+                let totalTime = -sortStartTime.timeIntervalSinceNow
                 sorting = false
-                onSortComplete?(-sortStartTime.timeIntervalSinceNow)
+                onSortComplete?(totalTime)
+
+                // Log timing
+                print("⏱️ [CPU Standard] Sorting \(splatCount) splats:")
+                print("   Depth compute: \(String(format: "%.2f", depthComputeTime * 1000))ms")
+                print("   CPU Sort:      \(String(format: "%.2f", sortTime * 1000))ms")
+                print("   CPU Reorder:   \(String(format: "%.2f", reorderTime * 1000))ms")
+                print("   TOTAL:         \(String(format: "%.2f", totalTime * 1000))ms")
+
+                if enableSortBenchmarking {
+                    logValidation(algorithm: "CPU Standard")
+                }
             }
 
+            // Step 1: Compute depths (serial on CPU)
+            let depthStart = Date()
             if orderAndDepthTempSort.count != splatCount {
                 orderAndDepthTempSort = Array(repeating: SplatIndexAndDepth(index: .max, depth: 0), count: splatCount)
             }
@@ -687,9 +1441,15 @@ public class SplatRenderer {
                     orderAndDepthTempSort[i].depth = dot(splatPosition, cameraWorldForward)
                 }
             }
+            depthComputeTime = -depthStart.timeIntervalSinceNow
 
+            // Step 2: Sort (CPU)
+            let sortStart = Date()
             orderAndDepthTempSort.sort { $0.depth > $1.depth }
+            sortTime = -sortStart.timeIntervalSinceNow
 
+            // Step 3: Reorder (serial CPU memory copies)
+            let reorderStart = Date()
             do {
                 try splatBufferPrime.setCapacity(splatCount)
                 splatBufferPrime.count = 0
@@ -700,8 +1460,9 @@ public class SplatRenderer {
 
                 swap(&splatBuffer, &splatBufferPrime)
             } catch {
-                // TODO: report error
+                print("❌ [CPU Standard] Reorder failed: \(error)")
             }
+            reorderTime = -reorderStart.timeIntervalSinceNow
         }
     }
     
